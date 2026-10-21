@@ -1,0 +1,315 @@
+diff --git a/libkern/libkern/c++/OSMetaClass.h b/libkern/libkern/c++/OSMetaClass.h
+--- a/libkern/libkern/c++/OSMetaClass.h
++++ b/libkern/libkern/c++/OSMetaClass.h
+@@ -1262,7 +1262,7 @@
+  * @result
+  * The metaclass of the OSMetaClass object.
+  */
+-	virtual const OSMetaClass * getMetaClass() const;
++	virtual const OSMetaClass * getMetaClass() const override;
+ 
+ 
+ /*!
+@@ -2612,7 +2612,7 @@
+ private:
+ // Obsolete APIs
+ 	static OSDictionary * getClassDictionary();
+-	virtual bool serialize(OSSerialize * serializer) const;
++	virtual bool serialize(OSSerialize * serializer) const override;
+ 
+ // Virtual Padding functions for MetaClass's
+ 	OSMetaClassDeclareReservedUnused(OSMetaClass, 0);
+diff --git a/libkern/c++/OSMetaClass.cpp b/libkern/c++/OSMetaClass.cpp
+--- a/libkern/c++/OSMetaClass.cpp
++++ b/libkern/c++/OSMetaClass.cpp
+@@ -433,7 +433,7 @@
+ {
+ public:
+ 	OSMetaClassMeta();
+-	OSObject * alloc() const;
++	OSObject * alloc() const override;
+ };
+ OSMetaClassMeta::OSMetaClassMeta()
+ 	: OSMetaClass("OSMetaClass", NULL, sizeof(OSMetaClass))
+diff --git a/iokit/IOKit/IOStatistics.h b/iokit/IOKit/IOStatistics.h
+--- a/iokit/IOKit/IOStatistics.h
++++ b/iokit/IOKit/IOStatistics.h
+@@ -29,9 +29,9 @@
+ #ifndef _IOKIT_STATISTICS_H
+ #define _IOKIT_STATISTICS_H
+ 
+-#define IOSTATISTICS_SIG            'IOST'
+-#define IOSTATISTICS_SIG_USERCLIENT 'IOSU'
+-#define IOSTATISTICS_SIG_WORKLOOP   'IOSW'
++#define IOSTATISTICS_SIG 0x494f5354U
++#define IOSTATISTICS_SIG_USERCLIENT 0x494f5355U
++#define IOSTATISTICS_SIG_WORKLOOP 0x494f5357U
+ 
+ /* Update when the binary format changes */
+ #define IOSTATISTICS_VER                        0x2
+diff --git a/bsd/netinet6/frag6.c b/bsd/netinet6/frag6.c
+--- a/bsd/netinet6/frag6.c
++++ b/bsd/netinet6/frag6.c
+@@ -198,7 +198,7 @@
+ static int
+ frag6_restore_context(struct mbuf *m)
+ {
+-	return (int)m->m_pkthdr.pkt_hdr;
++	return (int)(uintptr_t)m->m_pkthdr.pkt_hdr;
+ }
+ 
+ /*
+diff --git a/bsd/netinet6/ip6_output.c b/bsd/netinet6/ip6_output.c
+--- a/bsd/netinet6/ip6_output.c
++++ b/bsd/netinet6/ip6_output.c
+@@ -334,13 +334,13 @@
+ #define args            ip6obz.args
+ 	union {
+ 		struct {
+-			boolean_t select_srcif : 1;
+-			boolean_t hdrsplit : 1;
+-			boolean_t route_selected : 1;
+-			boolean_t dontfrag : 1;
++			bool select_srcif : 1;
++			bool hdrsplit : 1;
++			bool route_selected : 1;
++			bool dontfrag : 1;
+ #if IPSEC
+-			boolean_t needipsec : 1;
+-			boolean_t noipsec : 1;
++			bool needipsec : 1;
++			bool noipsec : 1;
+ #endif /* IPSEC */
+ 		};
+ 		uint32_t raw;
+diff --git a/osfmk/arm/model_dep.c b/osfmk/arm/model_dep.c
+--- a/osfmk/arm/model_dep.c
++++ b/osfmk/arm/model_dep.c
+@@ -839,7 +839,7 @@
+ 	 * panic CRC so that iBoot can hopefully find *something* useful in the panic region.
+ 	 */
+ 	if (PanicInfoSaved && (debug_buf_base >= (char*)gPanicBase) && (debug_buf_base < (char*)gPanicBase + gPanicSize)) {
+-		unsigned int pi_size = (unsigned int)(debug_buf_ptr - gPanicBase);
++		unsigned int pi_size = (unsigned int)((uintptr_t)debug_buf_ptr - gPanicBase);
+ 		PE_update_panic_crc((unsigned char*)gPanicBase, &pi_size);
+ 		PE_sync_panic_buffers(); // extra precaution; panic path likely isn't reliable if we're here
+ 	}
+@@ -870,7 +870,7 @@
+ {
+ 	unsigned int panicbuf_length = 0;
+ 
+-	panicbuf_length = (unsigned int)(debug_buf_ptr - gPanicBase);
++	panicbuf_length = (unsigned int)((uintptr_t)debug_buf_ptr - gPanicBase);
+ 	if (!panicbuf_length) {
+ 		return;
+ 	}
+diff --git a/osfmk/kperf/kperf_kpc.h b/osfmk/kperf/kperf_kpc.h
+--- a/osfmk/kperf/kperf_kpc.h
++++ b/osfmk/kperf/kperf_kpc.h
+@@ -31,7 +31,6 @@
+ 
+ #if KPC
+ #include <kern/kpc.h> /* KPC_MAX_COUNTERS */
+-#endif
+ 
+ void kperf_kpc_thread_ast(thread_t thread);
+ 
+@@ -51,4 +50,6 @@
+ void kperf_kpc_cpu_log(const struct kpcdata *);
+ void kperf_kpc_config_log(const struct kpcdata *);
+ 
++#endif /* KPC */
++
+ #endif /* __KPERF_KPC_H__ */
+diff --git a/bsd/kern/kern_sysctl.c b/bsd/kern/kern_sysctl.c
+--- a/bsd/kern/kern_sysctl.c
++++ b/bsd/kern/kern_sysctl.c
+@@ -2459,7 +2459,7 @@
+ sysctl_perfcontrol_callout_stat
+ (__unused struct sysctl_oid *oidp, void *arg1, int arg2, struct sysctl_req *req)
+ {
+-	perfcontrol_callout_stat_t stat = (perfcontrol_callout_stat_t)arg1;
++	perfcontrol_callout_stat_t stat = (perfcontrol_callout_stat_t)(uintptr_t)arg1;
+ 	perfcontrol_callout_type_t type = (perfcontrol_callout_type_t)arg2;
+ 	return sysctl_io_number(req, (int)perfcontrol_callout_stat_avg(type, stat),
+ 	           sizeof(int), NULL, NULL);
+@@ -3137,7 +3137,7 @@
+ sysctl_timer
+ (__unused struct sysctl_oid *oidp, __unused void *arg1, __unused int arg2, struct sysctl_req *req)
+ {
+-	int             oid = (int)arg1;
++	int             oid = (int)(uintptr_t)arg1;
+ 	uint64_t        value = timer_sysctl_get(oid);
+ 	uint64_t        new_value;
+ 	int             error;
+diff --git a/bsd/kern/qsort.c b/bsd/kern/qsort.c
+--- a/bsd/kern/qsort.c
++++ b/bsd/kern/qsort.c
+@@ -89,7 +89,7 @@
+ 	        *pj++ = t;                              \
+ 	} while (--i > 0);
+ 
+-#define SWAPINIT(a, es) swaptype = ((char *)a - (char *)0) % sizeof(long) || \
++#define SWAPINIT(a, es) swaptype = ((uintptr_t)a) % sizeof(long) || \
+ 	es % sizeof(long) ? 2 : es == sizeof(long)? 0 : 1;
+ 
+ static inline void
+diff --git a/osfmk/tests/pmap_tests.c b/osfmk/tests/pmap_tests.c
+--- a/osfmk/tests/pmap_tests.c
++++ b/osfmk/tests/pmap_tests.c
+@@ -333,7 +333,7 @@
+ 		thread_t nest_threads[TEST_NEST_THREADS];
+ 		kern_return_t thread_krs[TEST_NEST_THREADS];
+ 		pmap_test_thread_args args[TEST_NEST_THREADS];
+-		for (unsigned int j = 0; j < (sizeof(nest_threads) / sizeof(nest_threads[0])); j++) {
++		for (unsigned int j = 0; j != (sizeof(nest_threads) / sizeof(nest_threads[0])); j++) {
+ 			args[j].pmap = nested_pmap;
+ 			args[j].stop = FALSE;
+ 			/**
+@@ -401,7 +401,7 @@
+ 			}
+ 		}
+ 
+-		for (unsigned int j = 0; j < (sizeof(nest_threads) / sizeof(nest_threads[0])); j++) {
++		for (unsigned int j = 0; j != (sizeof(nest_threads) / sizeof(nest_threads[0])); j++) {
+ 			if (thread_krs[j] == KERN_SUCCESS) {
+ 				assert_wait((event_t)&args[j], THREAD_UNINT);
+ 				args[j].stop = TRUE;
+diff --git a/bsd/skywalk/nexus/flowswitch/flow/flow_entry.c b/bsd/skywalk/nexus/flowswitch/flow/flow_entry.c
+--- a/bsd/skywalk/nexus/flowswitch/flow/flow_entry.c
++++ b/bsd/skywalk/nexus/flowswitch/flow/flow_entry.c
+@@ -847,7 +847,7 @@
+ 	sf->sf_nx_port = fe->fe_nx_port;
+ 	sf->sf_key = fe->fe_key;
+ 	sf->sf_protocol = fe->fe_transport_protocol;
+-	sf->sf_svc_class = fe->fe_svc_class;
++	sf->sf_svc_class = (packet_svc_class_t)fe->fe_svc_class;
+ 	sf->sf_adv_idx = fe->fe_adv_idx;
+ 
+ 	if (fe->fe_flags & FLOWENTF_TRACK) {
+diff --git a/bsd/skywalk/nexus/netif/nx_netif.c b/bsd/skywalk/nexus/netif/nx_netif.c
+--- a/bsd/skywalk/nexus/netif/nx_netif.c
++++ b/bsd/skywalk/nexus/netif/nx_netif.c
+@@ -1016,7 +1016,7 @@
+ 				nqi->nqi_qset_id = qset->nqs_id;
+ 				nqi->nqi_queue_idx = k;
+ 				if (KPKT_VALID_SVC(nq->nq_svc)) {
+-					nqi->nqi_svc = nq->nq_svc;
++					nqi->nqi_svc = (packet_svc_class_t)nq->nq_svc;
+ 				}
+ 				if (nq->nq_flags & NETIF_QUEUE_IS_RX) {
+ 					nqi->nqi_queue_flag = NQI_QUEUE_FLAG_IS_RX;
+diff --git a/pexpert/arm/pe_serial.c b/pexpert/arm/pe_serial.c
+--- a/pexpert/arm/pe_serial.c
++++ b/pexpert/arm/pe_serial.c
+@@ -741,7 +741,7 @@
+ int
+ serial_init(void)
+ {
+-	DTEntry         entryP = NULL;
++	DTEntry         entryP __unused = NULL;
+ 	uint32_t        prop_size;
+ 	vm_offset_t     soc_base;
+ 	uintptr_t const *reg_prop;
+diff --git a/bsd/netkey/key.c b/bsd/netkey/key.c
+--- a/bsd/netkey/key.c
++++ b/bsd/netkey/key.c
+@@ -4246,7 +4246,7 @@
+ 	}
+ 
+ 	if ((flags & SECURITY_ASSOCIATION_ANY) == SECURITY_ASSOCIATION_ANY ||
+-	    (flags & SECURITY_ASSOCIATION_PFKEY) == SECURITY_ASSOCIATION_CUSTOM_IPSEC) {
++	    (flags & SECURITY_ASSOCIATION_CUSTOM_IPSEC) == SECURITY_ASSOCIATION_CUSTOM_IPSEC) {
+ 		LIST_FOREACH(sah, &custom_sahtree, chain) {
+ 			if (sah->state == SADB_SASTATE_DEAD) {
+ 				continue;
+diff --git a/bsd/kern/kern_descrip.c b/bsd/kern/kern_descrip.c
+--- a/bsd/kern/kern_descrip.c
++++ b/bsd/kern/kern_descrip.c
+@@ -4748,7 +4748,7 @@
+ 		if (uap->arg) {
+ 			/* extract 32 bits of flags from userland */
+ 			param_ptr = (caddr_t) uap->arg;
+-			param = (uint32_t) param_ptr;
++			param = (uint32_t)(uintptr_t) param_ptr;
+ 		} else {
+ 			/* If no argument is specified, error out */
+ 			error = EINVAL;
+diff --git a/osfmk/kern/coalition.c b/osfmk/kern/coalition.c
+--- a/osfmk/kern/coalition.c
++++ b/osfmk/kern/coalition.c
+@@ -490,7 +490,7 @@
+ coalition_io_rate_exceeded(int warning, const void *param0, __unused const void *param1)
+ {
+ 	if (warning == 0) {
+-		SENDING_NOTIFICATION__THIS_COALITION_IS_CAUSING_TOO_MUCH_IO((int)param0);
++		SENDING_NOTIFICATION__THIS_COALITION_IS_CAUSING_TOO_MUCH_IO((int)(uintptr_t)param0);
+ 	}
+ }
+ 
+diff --git a/bsd/kern/uipc_mbuf.c b/bsd/kern/uipc_mbuf.c
+--- a/bsd/kern/uipc_mbuf.c
++++ b/bsd/kern/uipc_mbuf.c
+@@ -2214,7 +2214,7 @@
+ static unsigned int
+ mbuf_slab_alloc(void *arg, mcache_obj_t ***plist, unsigned int num, int wait)
+ {
+-	mbuf_class_t class = (mbuf_class_t)arg;
++	mbuf_class_t class = (mbuf_class_t)(uintptr_t)arg;
+ 	unsigned int need = num;
+ 	mcache_obj_t **list = *plist;
+ 
+@@ -2299,7 +2299,7 @@
+ static void
+ mbuf_slab_free(void *arg, mcache_obj_t *list, __unused int purged)
+ {
+-	mbuf_class_t class = (mbuf_class_t)arg;
++	mbuf_class_t class = (mbuf_class_t)(uintptr_t)arg;
+ 	mcache_obj_t *nlist;
+ 	unsigned int num = 0;
+ 	int w;
+@@ -2343,7 +2343,7 @@
+ static void
+ mbuf_slab_audit(void *arg, mcache_obj_t *list, boolean_t alloc)
+ {
+-	mbuf_class_t class = (mbuf_class_t)arg;
++	mbuf_class_t class = (mbuf_class_t)(uintptr_t)arg;
+ 	mcache_audit_t *mca;
+ 
+ 	ASSERT(MBUF_CLASS_VALID(class) && !MBUF_CLASS_COMPOSITE(class));
+@@ -2388,7 +2388,7 @@
+ static void
+ mbuf_slab_notify(void *arg, u_int32_t reason)
+ {
+-	mbuf_class_t class = (mbuf_class_t)arg;
++	mbuf_class_t class = (mbuf_class_t)(uintptr_t)arg;
+ 	int w;
+ 
+ 	ASSERT(MBUF_CLASS_VALID(class));
+@@ -2625,7 +2625,7 @@
+ mbuf_cslab_alloc(void *arg, mcache_obj_t ***plist, unsigned int needed,
+     int wait)
+ {
+-	mbuf_class_t class = (mbuf_class_t)arg;
++	mbuf_class_t class = (mbuf_class_t)(uintptr_t)arg;
+ 	mbuf_class_t cl_class = 0;
+ 	unsigned int num = 0, cnum = 0, want = needed;
+ 	mcache_obj_t *ref_list = NULL;
+@@ -2826,7 +2826,7 @@
+ static void
+ mbuf_cslab_free(void *arg, mcache_obj_t *list, int purged)
+ {
+-	mbuf_class_t class = (mbuf_class_t)arg;
++	mbuf_class_t class = (mbuf_class_t)(uintptr_t)arg;
+ 	unsigned int num;
+ 	int w;
+ 
+@@ -2862,7 +2862,7 @@
+ static void
+ mbuf_cslab_audit(void *arg, mcache_obj_t *list, boolean_t alloc)
+ {
+-	mbuf_class_t class = (mbuf_class_t)arg, cl_class;
++	mbuf_class_t class = (mbuf_class_t)(uintptr_t)arg, cl_class;
+ 	mcache_audit_t *mca;
+ 	struct mbuf *m, *ms;
+ 	mcl_slab_t *clsp, *nsp;

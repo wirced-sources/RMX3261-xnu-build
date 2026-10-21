@@ -33,6 +33,7 @@ PATCHES = (
     "xnu/patches-ums512/0007-cortex-source-selection.patch",
     "xnu/patches-ums512/0008-vnode-argument-offset.patch",
     "xnu/patches-ums512/0009-portable-lp64-build-fixes.patch",
+    "xnu/patches-ums512/0010-native-portability.patch",
     "xnu/patches/0005-non-pac-build-fixes.patch",
 )
 CAPSULE = (
@@ -113,6 +114,18 @@ def full_master(text):
     return text + "\noptions UMS512 # <ums512>\n"
 
 
+def master_for_validation(text):
+    # Match upstream doconf's UMS512 (non-virtual SoC) preprocessing. Use the
+    # real unifdef, not a partial conditional parser that can drop policy groups.
+    command = (["/usr/bin/xcrun", "unifdef"] if platform.system() == "Darwin" else
+               ["wsl", "-d", "Ubuntu", "--exec", "/usr/bin/unifdef"])
+    result = subprocess.run([*command, "-t", "-USOC_IS_VIRTUALIZED", "-USOC_CONFIG_t8020"],
+                            input=text.encode(), capture_output=True, timeout=30)
+    if result.returncode not in (0, 1) or result.stderr.strip():
+        raise RuntimeError("upstream MASTER preprocessing failed")
+    return result.stdout.decode()
+
+
 def clone_work(name, work):
     dest = work / name
     if dest.exists():
@@ -137,16 +150,17 @@ def prepare(work):
     (src / "osfmk/ums512").mkdir()
     shutil.copyfile(ROOT / "xnu/platform/ums512/cpu_entry.h", src / "osfmk/ums512/cpu_entry.h")
     master = (src / "config/MASTER").read_text()
-    original = (src / "config/MASTER.arm64").read_text()
+    original = (src / "config/MASTER.arm64.MacOSX").read_text()
     board = full_master(original)
-    _, before = configure(master, original)
-    _, after = configure(master, board)
+    _, before = configure(master, master_for_validation(original))
+    _, after = configure(master, master_for_validation(board))
     if (set(after) - set(before) != {"ums512", "nos_arm_asm", "nos_arm_pmap"}
             or set(before) - set(after) != {"kpc", "kperf"}):
         raise ValueError("native board unexpectedly changed upstream features")
-    (src / "config/MASTER.arm64.ums512").write_text(board, encoding="utf-8", newline="\n")
+    (src / "config/MASTER.arm64.ums512.MacOSX").write_text(board, encoding="utf-8", newline="\n")
     result = {"source_commit": specs()[1]["xnu"]["commit"], "security_features_preserved": True,
               "excluded_unsupported_apple_pmu": ["kpc", "kperf"],
+              "upstream_master": "MASTER.arm64.MacOSX", "sdk_profile": "MacOSX",
               "features": after, "patches": {p: digest(ROOT / p) for p in PATCHES},
               "diagnostic_observer_included": False, "kernel_linked": False, "arm_init_executed": False}
     (work / "prepared.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
@@ -284,6 +298,9 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
               # Newer Clang reports intentionally dead debug/statistics locals.
               # Keep the warning visible; no blanket BUILD_WERROR=0 or check removal.
               "RC_NONARCH_CFLAGS=-Wno-error=unused-but-set-variable",
+              # Keep future-proof ICMP size guards and their diagnostics. The
+              # current fixed protocol header is smaller than either mbuf bound.
+              "icmp6.o_CWARNFLAGS_ADD=-Wno-address-of-packed-member -Wno-error=tautological-value-range-compare",
               # In 8796, BUILD_JSON_COMPILATION_DATABASE=1 REPLACES compiling
               # with command generation. It must not be set for a real build.
               "CONCISE=0", "VERBOSE=NO"]

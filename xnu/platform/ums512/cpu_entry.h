@@ -6,57 +6,58 @@
 #pragma once
 #ifdef ASSEMBLER
 .macro UMS512_VALIDATE_COLD_CPU
+    /* Numeric local labels work in Apple Clang15 and upstream LLVM alike. */
     mov x12, #1
     mrs x9, CurrentEL
     cmp x9, #4                         /* EL1 */
-    b.ne Lums512_entry_reject\@
+    b.ne 3f
     mov x12, #2
     mrs x9, SCTLR_EL1
     tst x9, #1                         /* MMU off */
-    b.ne Lums512_entry_reject\@
+    b.ne 3f
     tst x9, #4                         /* D-cache off */
-    b.ne Lums512_entry_reject\@
+    b.ne 3f
     tst x9, #0x1000                    /* I-cache off */
-    b.ne Lums512_entry_reject\@
+    b.ne 3f
     mov x12, #3
     mrs x9, MIDR_EL1
     ubfx x10, x9, #24, #8
     cmp x10, #0x41                    /* ARM implementer */
-    b.ne Lums512_entry_reject\@
+    b.ne 3f
     ubfx x10, x9, #4, #12
     mov x11, #0xd05                   /* Cortex-A55 */
     cmp x10, x11
-    b.eq Lums512_part_ok\@
+    b.eq 1f
     mov x11, #0xd0a                   /* Cortex-A75 */
     cmp x10, x11
-    b.ne Lums512_entry_reject\@
-Lums512_part_ok\@:
+    b.ne 3f
+1:
     mov x12, #4
     mrs x9, ID_AA64MMFR0_EL1
     ubfx x10, x9, #20, #4             /* TGran16: 1 or 2 supports 16K */
     cmp x10, #1
-    b.eq Lums512_granule_ok\@
+    b.eq 2f
     cmp x10, #2
-    b.ne Lums512_entry_reject\@
-Lums512_granule_ok\@:
+    b.ne 3f
+2:
     mov x12, #5
     and x10, x9, #15                  /* >= 40-bit physical address range */
     cmp x10, #2
-    b.lo Lums512_entry_reject\@
+    b.lo 3f
     mov x12, #6
     mrs x9, CTR_EL0
     and x10, x9, #15                  /* IminLine: 4 words * 2^4 = 64 */
     cmp x10, #4
-    b.ne Lums512_entry_reject\@
+    b.ne 3f
     ubfx x10, x9, #16, #4
     cmp x10, #4
-    b.ne Lums512_entry_reject\@
-    b Lums512_entry_ok\@
-Lums512_entry_reject\@:
+    b.ne 3f
+    b 5f
+3:
     msr DAIFSet, #15
-Lums512_entry_park\@:
+4:
     wfe
-    b Lums512_entry_park\@
-Lums512_entry_ok\@:
+    b 4b
+5:
 .endmacro
 #endif
