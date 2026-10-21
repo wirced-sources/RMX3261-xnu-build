@@ -165,7 +165,16 @@ def run(args, name, report, env, cwd, timeout=1800):
             time.sleep(1)
     if proc.returncode:
         lines = logfile.read_text(errors="replace").splitlines()
-        print("\n".join(lines[-120:]), flush=True)
+        # Recursive make may continue installing headers long after a compiler
+        # failure. Export bounded ERROR CONTEXT, not just that unrelated tail.
+        indices = set()
+        for i, line in enumerate(lines):
+            if re.search(r"(?i)(?:fatal error:|\berror:|\bError [0-9]|No rule to make|Undefined symbols|^ld:|not found)", line):
+                indices.update(range(max(0, i - 2), min(len(lines), i + 5)))
+        selected = sorted(indices)[:700]
+        if not selected:
+            selected = list(range(max(0, len(lines) - 35), len(lines)))
+        print("\n".join(lines[i][:1600] for i in selected), flush=True)
         raise RuntimeError(f"{name} exit {proc.returncode}; see {logfile}")
 
 
