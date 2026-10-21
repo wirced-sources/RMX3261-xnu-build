@@ -264,6 +264,7 @@ def execute(kernel, record, out, qemu, clang):
                 result['stops'].append({'boundary':'timeout before arm_init',**rsp.registers()})
                 raise RuntimeError('bounded run stopped before genuine arm_init; inspect recorded PC/SP/x0')
             before = rsp.registers()
+            result['arm_init_entry'] = before
             if int(before['pc'],16) != sym['_arm_init']:
                 raise ValueError('kernel stopped before genuine arm_init')
             if int(before['x0'],16) != va+args_pa-pa or int(before['sp'],16) % 16:
@@ -281,7 +282,6 @@ def execute(kernel, record, out, qemu, clang):
             result['arm_init_executed'] = int(result['stops'][0]['pc'],16) == sym['_arm_init']+4
             if not result['arm_init_executed']:
                 raise ValueError('genuine arm_init instructions did not execute')
-            result['arm_init_entry'] = before
             # Do not describe a reached function boundary as a working subsystem.
             boundaries = {sym[n]:n for n in ('_arm_vm_init','_kernel_bootstrap','_panic')}
             for address in boundaries:
@@ -319,6 +319,10 @@ def execute(kernel, record, out, qemu, clang):
             proc.kill()
             proc.wait(timeout=5)
         log.close()
+        if result.get('error'):
+            tail = (out/'qemu.log').read_bytes()[-4096:].decode('utf-8',errors='replace')
+            if tail:
+                print('QEMU diagnostic tail: '+tail,flush=True)
         (out/'execution.json').write_text(json.dumps(result,indent=2)+'\n')
         print(json.dumps(result,indent=2),flush=True)
 
