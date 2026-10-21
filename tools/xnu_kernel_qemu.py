@@ -336,6 +336,10 @@ def execute(kernel, record, out, qemu, clang):
                     result['assertion_expression'] = image_cstring(data,report['segments'],int(regs['x2'],16))
                 if name == '_panic':
                     result['panic_reached'] = True
+                    panic_format = image_cstring(data,report['segments'],int(regs['x0'],16),2048)
+                    if panic_format:
+                        result['panic_format_from_audited_kernel'] = panic_format[:512]
+                        result['panic_format_truncated'] = len(panic_format)>512
                     for i in range(6):
                         text = image_cstring(data,report['segments'],int(regs[f'x{i}'],16))
                         if text:
@@ -345,10 +349,22 @@ def execute(kernel, record, out, qemu, clang):
                     # Read only this bounded QEMU-generated argument block;
                     # export source strings and numeric words, not a raw dump.
                     try:
-                        block = bytes.fromhex(rsp.command(f'm{int(regs["sp"],16):x},40'))
-                        values = struct.unpack('<8Q',block)
+                        fault = bool(panic_format and panic_format.startswith('%s at pc '))
+                        length = 320 if fault else 64
+                        block = bytes.fromhex(rsp.command(f'm{int(regs["sp"],16):x},{length:x}'))
+                        values = struct.unpack('<8Q',block[:64])
                         result['panic_stack_argument_words'] = [hex(v) for v in values]
                         result['panic_stack_source_strings'] = [image_cstring(data,report['segments'],v) for v in values]
+                        if fault:
+                            # Exact panic_with_thread_kernel_state argument order
+                            # in pinned sleh.c. Darwin packs the final two u32s.
+                            state = struct.unpack_from('<38Q',block)
+                            cpsr,esr,far = struct.unpack_from('<IIQ',block,304)
+                            if state[1] != state[37] or state[2] != state[35]:
+                                raise ValueError('saved-state panic ABI mismatch')
+                            result['kernel_fault'] = dict(pc=hex(state[1]),lr=hex(state[2]),
+                                sp=hex(state[36]),cpsr=hex(cpsr),esr=hex(esr),far=hex(far),
+                                **{f'x{i}':hex(state[5+i]) for i in range(6)})
                     except (ValueError,RuntimeError) as error:
                         result['panic_argument_decode_error'] = str(error)
                 if name in ('_Assert','_panic','other stop'):
@@ -377,7 +393,7 @@ def execute(kernel, record, out, qemu, clang):
         log.close()
         ordered = sorted((address,name) for name,address in sym.items() if address)
         from bisect import bisect_right
-        for stop in [result.get('arm_init_entry',{}),*result['stops']]:
+        for stop in [result.get('arm_init_entry',{}),result.get('kernel_fault',{}),*result['stops']]:
             for register in ('pc','lr'):
                 if register not in stop:
                     continue
@@ -386,6 +402,15 @@ def execute(kernel, record, out, qemu, clang):
                 if index >= 0 and address-ordered[index][0] < 0x10000:
                     base,name = ordered[index]
                     stop[register+'_symbol'] = name+'+'+hex(address-base)
+        decoded = {}
+        for i,word in enumerate(result.get('panic_stack_argument_words',[])):
+            address = int(word,16)
+            index = bisect_right(ordered,(address,chr(0x10ffff)))-1
+            if index >= 0 and address-ordered[index][0] < 0x10000:
+                base,name = ordered[index]
+                decoded[str(i)] = name+'+'+hex(address-base)
+        if decoded:
+            result['panic_stack_address_symbols'] = decoded
         if result.get('error'):
             tail = (out/'qemu.log').read_bytes()[-4096:].decode('utf-8',errors='replace')
             if tail:

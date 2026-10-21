@@ -98,9 +98,13 @@ Xcode15.4 in the authorized macOS CI has compiled genuine allocator builtins,
 built the native host dependencies, generated XNU headers and LINKED/AUDITED
 the full ARM64 MH_EXECUTE (19636296 bytes, zero unresolved imports). QEMU9.2.4
 is built on the same ephemeral runner. Run39678485260 also completed upstream
-make install and executed genuine arm_init instructions in QEMU, reaching
-arm_vm_init and then an assertion. This is early execution, not a completed
-kernel boot or working iOS. The board uses full16KB L1 (47-bit VA) to cover the
+make install and executed genuine arm_init instructions in QEMU. After the
+physmap fix, run39682365345 observed genuine returns from pmap_bootstrap,
+arm_vm_init, zone_bootstrap, vm_mem_bootstrap, sched_init and ipc_init, reaching
+kernel_bootstrap and then a progress-UI assertion in PE_init_iokit. The headless
+QEMU profile uses the original UI-only -noprogress boot argument. These are
+completed early initializer paths, not a completed OS boot or working iOS.
+The board uses full16KB L1 (47-bit VA) to cover the
 stock MacOSX ARM_LARGE_MEMORY link address; subpage L1 only covers39 bits.
 Unavailable Apple-only PMU/IOMMU interfaces are removed from explicit export
 lists rather than supplied by fake implementations. Read STATUS.md and NOTES.md
