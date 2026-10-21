@@ -105,3 +105,12 @@ stock MacOSX ARM_LARGE_MEMORY link address; subpage L1 only covers39 bits.
 Unavailable Apple-only PMU/IOMMU interfaces are removed from explicit export
 lists rather than supplied by fake implementations. Read STATUS.md and NOTES.md
 in the main local project for exact build and QEMU outcomes.
+
+The local `python tools/physmap_bounds.py` regression extracts the exact pinned
+XNU arm_vm_physmap_slide function and exercises all65536 page-aligned1GB slides
+with the audited QEMU image layout. Page-table writes are recorded by a host-test
+hook; this checks bounds arithmetic only. The original non-PPL ARM_LARGE_MEMORY
+aperture omits alignment gaps. The UMS512 patch reserves up to one twig per PTOV
+entry in both the aperture bound and its L1 allocation, preserving the assertion
+and page protections. The QEMU ADT includes an empty /defaults node so pmap uses
+its own default ASID count, without inventing hardware limits.

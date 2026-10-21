@@ -41,6 +41,7 @@ PATCHES = (
     "xnu/patches-ums512/0014-isolate-lldb-syntax-checker.patch",
     "xnu/patches-ums512/0015-remove-unavailable-pmu-exports.patch",
     "xnu/patches-ums512/0016-remove-unavailable-apple-iommu-exports.patch",
+    "xnu/patches-ums512/0017-reserve-physmap-alignment-slack.patch",
     "xnu/patches/0005-non-pac-build-fixes.patch",
 )
 CAPSULE = (

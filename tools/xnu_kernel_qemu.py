@@ -219,6 +219,7 @@ def execute(kernel, record, out, qemu, clang):
     end = max(s['vmaddr']+s['vmsize'] for s in report['segments'] if s['initprot'])
     adt_pa = align(pa+end-va)
     adt = node('device-tree', [('model',b'qemu,virt\0')], [
+        node('defaults'), # pmap requires the node; absent ASID property uses its real default.
         node('chosen', [('dram-base',struct.pack('<Q',pa)),('dram-size',struct.pack('<Q',mem)),('random-seed',os.urandom(64))], [node('memory-map')]),
         node('cpus', children=[node('cpu0',[('device_type',b'cpu\0'),('state',b'running\0'),('reg',struct.pack('<I',0)),('timebase-frequency',struct.pack('<I',0))])]),
         node('arm-io',[('device_type',b'qemu,virt\0'),('ranges',struct.pack('<3Q',0,gicd[0],gicr[0]+gicr[1]-gicd[0]))], [node('gic',[('reg',struct.pack('<4Q',0,gicd[1],gicr[0]-gicd[0],gicr[1]))])])])
