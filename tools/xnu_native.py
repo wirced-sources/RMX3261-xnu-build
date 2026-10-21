@@ -255,6 +255,7 @@ def build(work):
     # overrides. Use the verified source commit's timestamp, not wall-clock time.
     epoch = output("git", "-C", source("xnu"), "show", "-s", "--format=%ct", "HEAD")
     env["SOURCE_DATE_EPOCH"] = epoch
+    env["ZERO_AR_DATE"] = "1" # Upstream ld64: zero N_OSO debug-map timestamps.
     env["KERNEL_BUILD_DATE"] = datetime.datetime.fromtimestamp(int(epoch), datetime.timezone.utc).isoformat()
     env["KERNEL_BUILD_OBJROOT"] = "xnu-8796.141.3/DEVELOPMENT_ARM64_UMS512"
     version = subprocess.check_output(["/usr/bin/xcodebuild", "-version"], env=env, text=True, timeout=30).strip()

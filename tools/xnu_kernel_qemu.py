@@ -239,6 +239,10 @@ def execute(kernel, record, out, qemu, clang):
     struct.pack_into('<4Q',args,8,va,pa,mem,top)
     struct.pack_into('<Q',args,96,plan['deviceTreeP'])
     struct.pack_into('<I',args,104,len(adt))
+    # Original MacOSX progress UI requires a framebuffer. This QEMU profile is
+    # headless: use its genuine UI-only boot argument, not fabricated video RAM.
+    command_line = b'-noprogress'
+    args[108:108+len(command_line)] = command_line
     struct.pack_into('<Q',args,728,mem)
     raw[args_pa-header_pa:args_pa-header_pa+len(args)] = args
     (out/'kernel.physical.bin').write_bytes(raw)
@@ -257,6 +261,7 @@ def execute(kernel, record, out, qemu, clang):
         '-gdb',f'tcp:127.0.0.1:{port}','-kernel',str(image),'-device',f'loader,file={out / "kernel.physical.bin"},addr={header_pa:#x},force-raw=on'],stdout=log,stderr=log)
     result = {'kernel_sha256':report['sha256'],'arm_init_executed':False,
               'kernel_boot_completed':False,'hardware_verified':False,'stops':[],
+              'boot_arguments':command_line.decode('ascii'),
               'returned_init_functions':[]}
     try:
         deadline = time.monotonic()+10
