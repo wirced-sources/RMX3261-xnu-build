@@ -16,6 +16,7 @@ import shutil
 import signal
 import struct
 import subprocess
+import sys
 import time
 import zipfile
 
@@ -183,7 +184,7 @@ def run(args, name, report, env, cwd, timeout=1800):
         # failure. Export bounded ERROR CONTEXT, not just that unrelated tail.
         indices = set()
         for i, line in enumerate(lines):
-            if re.search(r"(?i)(?:fatal error:|\berror:|\bError [0-9]|No rule to make|Undefined symbols|^ld:|not found)", line):
+            if re.search(r"(?i)(?:fatal error:|\berror:|\bError [0-9]|No rule to make|Undefined symbols|^ld:|not found|No such file|SyntaxError|ImportError|ModuleNotFoundError)", line):
                 indices.update(range(max(0, i - 2), min(len(lines), i + 5)))
         selected = sorted(indices)[:700]
         if not selected:
@@ -205,6 +206,12 @@ def build(work):
     work = Path(work).resolve()
     work.relative_to((ROOT / "out").resolve())
     work.mkdir(parents=True, exist_ok=True)
+    # Upstream syntax_checker.py uses /usr/bin/env python. Supply a real local
+    # Python3 alias, without changing the system interpreter or skipping checks.
+    bindir = work / "bin"
+    bindir.mkdir(exist_ok=True)
+    (bindir / "python").symlink_to("/usr/bin/python3")
+    env["PATH"] = str(bindir) + ":" + env["PATH"]
     report = OUT / "report"
     report.mkdir(parents=True, exist_ok=True)
     sdk = subprocess.check_output(["xcrun", "--sdk", "macosx", "--show-sdk-path"], env=env, text=True, timeout=30).strip()
@@ -261,7 +268,9 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
               "SRCROOT=" + str(src), "OBJROOT=" + str(work / "xnu.obj"), "SYMROOT=" + str(work / "xnu.sym"),
               "INCFLAGS_SDK=-I" + str(fake / "usr/local/include/kernel"),
               "LDFLAGS_KERNEL_SDK=-L" + str(fake / "usr/local/lib/kernel") + " -L" + sdk + "/usr/local/lib/kernel",
-              "BUILD_JSON_COMPILATION_DATABASE=1", "CONCISE=0", "VERBOSE=YES"]
+              # In 8796, BUILD_JSON_COMPILATION_DATABASE=1 REPLACES compiling
+              # with command generation. It must not be set for a real build.
+              "CONCISE=0", "VERBOSE=NO"]
     run(["make", "installhdrs", "-j2", *native], "xnu-headers", report, env, src)
     xbuild("Libsystem", "installhdrs", ["FAKEROOT_DIR=" + str(fake)])
     run(["xcodebuild", "installhdrs", "-sdk", "macosx", "-jobs", "2", "ARCHS=arm64", "VALID_ARCHS=arm64",
