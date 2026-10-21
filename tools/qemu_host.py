@@ -5,6 +5,7 @@ from pathlib import Path
 import platform
 import shutil
 import subprocess
+import sys
 import tarfile
 import urllib.request
 
@@ -50,7 +51,16 @@ def build():
         run(['brew','install','glib'],'dependency-glib',report,env,work,900)
     obj = work/'build'
     obj.mkdir()
+    # QEMU9's mkvenv needs distlib. New Homebrew pip no longer vendors it.
+    # Install actual pinned build packages into this job's own venv, leaving
+    # system/Homebrew Python and its externally-managed environment untouched.
+    python_env = work/'build-python'
+    run([sys.executable,'-m','venv',python_env],'python-venv',report,env,work,120)
+    python = python_env/'bin/python3'
+    run([python,'-m','pip','install','--disable-pip-version-check','--only-binary=:all:',
+         'distlib==0.3.9','meson==1.5.0','pycotap==1.3.1'], 'python-deps',report,env,work,180)
     run([src/'configure','--target-list=aarch64-softmmu','--with-devices-aarch64=minimal','--without-default-features',
+         '--python='+str(python),
          '--enable-tcg','--enable-fdt','--enable-download','--disable-docs','--disable-tools',
          '--disable-user','--disable-pixman'], 'configure',report,env,obj,300)
     run(['ninja','-j2','qemu-system-aarch64'],'qemu-build',report,env,obj,1800)

@@ -173,7 +173,7 @@ class RSP:
         data = bytes.fromhex(self.command('g'))
         if len(data) < 33*8:
             raise ValueError('short AArch64 register set')
-        return {name: hex(struct.unpack_from('<Q', data, i*8)[0]) for name,i in (('x0',0),('sp',31),('pc',32))}
+        return {name: hex(struct.unpack_from('<Q', data, i*8)[0]) for name,i in (('x0',0),('x12',12),('lr',30),('sp',31),('pc',32))}
 
 
 def execute(kernel, record, out, qemu, clang):
@@ -296,6 +296,15 @@ def execute(kernel, record, out, qemu, clang):
                 regs = rsp.registers()
                 name = boundaries.get(int(regs['pc'],16),'other stop')
                 result['stops'].append({'boundary':name,**regs})
+                if name == '_panic':
+                    pointer = int(regs['x0'],16)
+                    owner = next((s for s in report['segments'] if s['vmaddr'] <= pointer < s['vmaddr']+s['filesize']),None)
+                    if owner:
+                        begin = owner['fileoff']+pointer-owner['vmaddr']
+                        end = min(begin+512,owner['fileoff']+owner['filesize'])
+                        text = data[begin:end].split(b'\0',1)[0]
+                        if text and all(c in (9,10,13) or 32 <= c < 127 for c in text):
+                            result['panic_format_from_audited_kernel'] = text.decode('ascii')
                 if name in ('_panic','other stop'):
                     break
                 rsp.command(f'z1,{int(regs["pc"],16):x},4')

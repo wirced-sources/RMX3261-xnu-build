@@ -18,6 +18,11 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+      - name: Prepare pinned QEMU host
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+          HOMEBREW_NO_ANALYTICS: 1
+        run: python3 tools/qemu_host.py
       - name: Build original XNU with Apple tools
         run: python3 tools/xnu_native.py --fetch --build
       - name: Execute the audited native kernel in QEMU
@@ -27,7 +32,6 @@ jobs:
           HOMEBREW_NO_ANALYTICS: 1
         run: |
           if [ -f out/native/report/kernel-audit.json ]; then
-            python3 tools/qemu_host.py
             QEMU_BIN="$PWD/out/native/qemu-host/build/qemu-system-aarch64"
             "$QEMU_BIN" --version
             python3 tools/xnu_kernel_qemu.py out/native/report/kernel.development.ums512.macho --record out/native/report/kernel-audit.json --out out/native/kernel-qemu --qemu "$QEMU_BIN" --clang "$(xcrun --find clang)"

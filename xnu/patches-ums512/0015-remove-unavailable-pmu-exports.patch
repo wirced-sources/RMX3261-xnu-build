@@ -1,0 +1,24 @@
+diff --git a/config/Unsupported.arm64.exports b/config/Unsupported.arm64.exports
+--- a/config/Unsupported.arm64.exports
++++ b/config/Unsupported.arm64.exports
+@@ -9,20 +9,6 @@
+ _serial_putc
+ _text_crypter_create_hook_set
+ _vm_map_copyout
+-_kpc_register_pm_handler
+-_kpc_reserve_pm_counters
+-_kpc_release_pm_counters
+-_kpc_pm_acknowledge
+-_kpc_get_running
+-_kpc_set_running
+-_kpc_get_cpu_counters
+-_kpc_get_shadow_counters
+-_kpc_get_config
+-_kpc_set_config
+-_kpc_get_period
+-_kpc_set_period
+-_kpc_get_actionid
+-_kpc_set_actionid
+ _vm_map:_vm_map_external
+ __ZN5IORTC15getUTCTimeOfDayEPmPj
+ __ZN5IORTC15setUTCTimeOfDayEmj

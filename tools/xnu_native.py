@@ -38,6 +38,7 @@ PATCHES = (
     "xnu/patches-ums512/0012-unused-uart-registration.patch",
     "xnu/patches-ums512/0013-native-link-dependencies.patch",
     "xnu/patches-ums512/0014-isolate-lldb-syntax-checker.patch",
+    "xnu/patches-ums512/0015-remove-unavailable-pmu-exports.patch",
     "xnu/patches/0005-non-pac-build-fixes.patch",
 )
 CAPSULE = (
@@ -204,6 +205,9 @@ def run(args, name, report, env, cwd, timeout=1800):
             (report / (name + "-undefined.json")).write_text(json.dumps(missing, indent=2) + "\n")
             print("UNRESOLVED SYMBOLS: " + str(len(missing)), flush=True)
             print("\n".join(missing[:500]), flush=True)
+        failures = [line for line in lines if re.search(r"make(?:\[[0-9]+\])?: \*\*\*.*Error [0-9]+",line)]
+        if failures:
+            print('FAILED MAKE TARGETS:\n'+'\n'.join(dict.fromkeys(failures))[:10000],flush=True)
         # Recursive make may continue installing headers long after a compiler
         # failure. Export bounded ERROR CONTEXT, not just that unrelated tail.
         indices = set()
@@ -213,7 +217,7 @@ def run(args, name, report, env, cwd, timeout=1800):
             # Downstream make failures are not separate compiler root causes.
             if re.search(r"make(?:\[[0-9]+\])?: \*\*\*.*Error [0-9]+", line):
                 continue
-            if re.search(r"(?i)(?:fatal error:|\berror:|\bError [0-9]|No rule to make|Undefined symbols|^ld:|not found|No such file|SyntaxError|ImportError|ModuleNotFoundError)", line):
+            if re.search(r"(?i)(?:fatal error:|\berror:|\bError [0-9]|exported name not in import list|No rule to make|Undefined symbols|^ld:|not found|No such file|SyntaxError|ImportError|ModuleNotFoundError)", line):
                 warning = re.search(r"\[-W[^]]+\]", line)
                 key = warning[0] if warning else re.sub(r"'[^']*'|`[^']*'|\b[0-9]+\b", "<value>", line.split("error:")[-1])
                 count, sample = families.get(key, (0, line))
@@ -234,6 +238,7 @@ def run(args, name, report, env, cwd, timeout=1800):
         if not selected:
             selected = list(range(max(0, len(lines) - 35), len(lines)))
         print("\n".join(lines[i][:1600] for i in selected), flush=True)
+        print('FINAL BUILD LOG TAIL:\n'+'\n'.join(lines[-35:])[:14000],flush=True)
         raise RuntimeError(f"{name} exit {proc.returncode}; see {logfile}")
 
 
