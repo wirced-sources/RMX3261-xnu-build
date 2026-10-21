@@ -1,0 +1,16 @@
+diff --git a/pexpert/arm/pe_init.c b/pexpert/arm/pe_init.c
+--- a/pexpert/arm/pe_init.c
++++ b/pexpert/arm/pe_init.c
+@@ -638,9 +638,9 @@ PE_get_offset_into_panic_region(char *location)
+ {
+ 	assert(gPanicBase != 0);
+-	assert(location >= (char *) gPanicBase);
+-	assert((unsigned int)(location - gPanicBase) < gPanicSize);
++	assert((uintptr_t)location >= gPanicBase);
++	assert((uintptr_t)location - gPanicBase < gPanicSize);
+ 
+-	return (uint32_t)(uintptr_t)(location - gPanicBase);
++	return (uint32_t)((uintptr_t)location - gPanicBase);
+ }
+ 
+ void

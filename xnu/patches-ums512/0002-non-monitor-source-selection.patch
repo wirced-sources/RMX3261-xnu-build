@@ -1,0 +1,15 @@
+diff --git a/osfmk/conf/files.arm64 b/osfmk/conf/files.arm64
+--- a/osfmk/conf/files.arm64
++++ b/osfmk/conf/files.arm64
+@@ -40,6 +40,11 @@
+ osfmk/arm/arm_timer.c		standard
+ osfmk/arm/arm_init.c	optional config_pmap_ppl
+ osfmk/arm64/arm_vm_init.c	optional config_pmap_ppl
++# UMS512 needs the real cold-init path without enabling Apple's PPL policy.
++# config permits a later visible entry to replace an earlier invisible entry.
++osfmk/arm/arm_init.c	optional ums512
++osfmk/arm64/arm_vm_init.c	optional ums512
++osfmk/arm64/start.s	optional ums512 nos_arm_asm
+ osfmk/arm64/arm64_hypercall.c	standard
+ osfmk/arm/io_map.c		standard
+ osfmk/arm64/loose_ends.c	standard

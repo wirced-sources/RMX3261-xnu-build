@@ -1,0 +1,42 @@
+diff --git a/osfmk/arm/pmap/pmap.c b/osfmk/arm/pmap/pmap.c
+--- a/osfmk/arm/pmap/pmap.c
++++ b/osfmk/arm/pmap/pmap.c
+@@ -4682,8 +4682,8 @@
+ 			}
+ #endif
+ 			if (remove && (options & PMAP_OPTIONS_COMPRESSOR)) {
+-				panic("pmap_page_protect: attempt to compress ppnum 0x%x owned by iommu %p, pve_p=%p",
+-				    ppnum, ptep_get_iommu(pte_p), pve_p);
++				panic("pmap_page_protect: attempt to compress ppnum 0x%x owned by iommu pte %p, pve_p=%p",
++				    ppnum, pte_p, pve_p);
+ 			}
+ 			goto protect_skip_pve_pass1;
+ 		}
+@@ -5822,6 +5822,9 @@
+ 	return pte;
+ }
+ 
++/* The implementation is below; C99 requires a declaration at the first use. */
++MARK_AS_PMAP_TEXT static void pmap_phys_write_disable(vm_address_t va);
++
+ MARK_AS_PMAP_TEXT kern_return_t
+ pmap_enter_options_internal(
+ 	pmap_t pmap,
+@@ -11622,6 +11625,10 @@
+ #endif /* !XNU_MONITOR */
+ 
+ 
++/* Every caller is within one of these existing feature guards. Do not parse
++ * unavailable PPL helpers when neither consumer is selected. No feature or
++ * protection is disabled here; enabled consumers retain their original calls. */
++#if PMAP_CS_PPL_MONITOR || PMAP_CS_INCLUDE_CODE_SIGNING
+ MARK_AS_PMAP_TEXT static inline void
+ pmap_cs_lockdown_pages(vm_address_t kva, vm_size_t size, bool ppl_writable)
+ {
+@@ -11642,5 +11649,6 @@
+ 	pmap_ppl_unlockdown_pages(kva, size, 0, ppl_writable);
+ #endif
+ }
++#endif /* PMAP_CS_PPL_MONITOR || PMAP_CS_INCLUDE_CODE_SIGNING */
+ 
+ /**

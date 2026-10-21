@@ -1,0 +1,315 @@
+"""Native Apple build, using the upstream Makefiles and Xcode 15.4.
+
+--fetch downloads pinned Apple OSS sources. --prepare is offline and portable.
+--build requires macOS/Xcode; never installs a KDK, changes xcode-select, exports
+an SDK, runs a diagnostic observer, or substitutes allocator/crypto/CS routines.
+--capsule exports a fixed text-only allowlist, without publishing anything.
+"""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import platform
+import re
+import shutil
+import signal
+import struct
+import subprocess
+import time
+import zipfile
+
+from xnu_config import configure
+
+ROOT = Path(__file__).resolve().parents[1]
+OUT = ROOT / "out/native"
+PATCHES = (
+    "xnu/patches-ums512/0001-machine-registration.patch",
+    "xnu/patches-ums512/0002-non-monitor-source-selection.patch",
+    "xnu/patches-ums512/0003-panic-region-offset.patch",
+    "xnu/patches-ums512/0004-cortex-cold-entry.patch",
+    "xnu/patches-ums512/0005-exclude-apple-iommu.patch",
+    "xnu/patches-ums512/0006-pmap-build-context.patch",
+    "xnu/patches/0005-non-pac-build-fixes.patch",
+)
+CAPSULE = (
+    "tools/xnu_native.py", "tools/xnu_config.py", "tools/macho_kernel.py", "xnu/native.lock.json",
+    "xnu/sources.lock.json", "xnu/platform/ums512/UMS512.h",
+    "xnu/platform/ums512/cpu_entry.h", "ci/xnu-native.yml",
+    "docs/NATIVE_BUILD.md", *PATCHES,
+)
+
+
+def digest(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def specs():
+    lock = json.loads((ROOT / "xnu/native.lock.json").read_text())
+    sources = dict(lock["sources"])
+    sources["xnu"] = json.loads((ROOT / "xnu/sources.lock.json").read_text())["xnu"]
+    return lock, sources
+
+
+def output(*args, cwd=None):
+    return subprocess.check_output([str(a) for a in args], cwd=cwd, text=True, timeout=180).strip()
+
+
+def verify_source(path, spec):
+    for ref, expected in (("HEAD", spec["commit"]), ("HEAD^{tree}", spec["tree"])):
+        if output("git", "-C", path, "rev-parse", ref) != expected:
+            raise ValueError("source identity mismatch: " + str(path))
+    if output("git", "-C", path, "status", "--porcelain"):
+        raise ValueError("source cache is not pristine: " + str(path))
+
+
+def source(name):
+    _, sources = specs()
+    candidates = [OUT / "cache" / name]
+    if name == "xnu":
+        candidates.append(ROOT / "out/m09-upstream/xnu")
+    elif name == "bootstrap_cmds":
+        candidates.append(ROOT / "out/m010-upstream/bootstrap_cmds")
+    for path in candidates:
+        if path.exists():
+            verify_source(path, sources[name])
+            return path
+    raise FileNotFoundError("pinned source absent, use --fetch: " + name)
+
+
+def fetch():
+    _, sources = specs()
+    for name, spec in sources.items():
+        try:
+            source(name)
+            continue
+        except FileNotFoundError:
+            pass
+        path = OUT / "cache" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        output("git", "-c", "core.autocrlf=false", "clone", "--depth", "1", "--branch",
+               spec["tag"], spec["repository"] + ".git", path)
+        verify_source(path, spec)
+
+
+def full_master(text):
+    """Keep every upstream ARM64 feature; add only machine/source selection."""
+    pattern = r"^(#\s+KERNEL_BASE\s*=\s*\[)([^\]]+)(\])"
+    text, count = re.subn(pattern, r"\1\2 ums512 nos_arm_asm nos_arm_pmap \3", text, flags=re.M)
+    if count != 1:
+        raise ValueError("upstream MASTER group changed")
+    return text + "\noptions UMS512 # <ums512>\n"
+
+
+def clone_work(name, work):
+    dest = work / name
+    if dest.exists():
+        raise ValueError("refusing to overwrite build sources; choose a fresh --work: " + str(dest))
+    output("git", "-c", "core.autocrlf=false", "clone", "--shared", "--no-checkout", source(name), dest)
+    output("git", "-C", dest, "-c", "core.autocrlf=false", "checkout", "--detach", specs()[1][name]["commit"])
+    verify_source(dest, specs()[1][name])
+    return dest
+
+
+def prepare(work):
+    work = Path(work).resolve()
+    work.relative_to((ROOT / "out").resolve())
+    work.mkdir(parents=True, exist_ok=True)
+    src = clone_work("xnu", work)
+    for patch in PATCHES:
+        output("git", "-C", src, "apply", "--check", ROOT / patch)
+        output("git", "-C", src, "apply", ROOT / patch)
+    shutil.copyfile(ROOT / "xnu/platform/ums512/UMS512.h", src / "pexpert/pexpert/arm64/UMS512.h")
+    (src / "osfmk/ums512").mkdir()
+    shutil.copyfile(ROOT / "xnu/platform/ums512/cpu_entry.h", src / "osfmk/ums512/cpu_entry.h")
+    master = (src / "config/MASTER").read_text()
+    original = (src / "config/MASTER.arm64").read_text()
+    board = full_master(original)
+    _, before = configure(master, original)
+    _, after = configure(master, board)
+    if set(after) - set(before) != {"ums512", "nos_arm_asm", "nos_arm_pmap"} or set(before) - set(after):
+        raise ValueError("native board unexpectedly changed upstream features")
+    (src / "config/MASTER.arm64.ums512").write_text(board, encoding="utf-8", newline="\n")
+    result = {"source_commit": specs()[1]["xnu"]["commit"], "upstream_features_preserved": True,
+              "features": after, "patches": {p: digest(ROOT / p) for p in PATCHES},
+              "diagnostic_observer_included": False, "kernel_linked": False, "arm_init_executed": False}
+    (work / "prepared.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    print("PREPARED: complete upstream ARM64 configuration; all features preserved", flush=True)
+    return src
+
+
+def rewrite(path, old, new, count=1):
+    text = path.read_text()
+    if text.count(old) != count:
+        raise ValueError("upstream build integration changed: " + str(path))
+    path.write_text(text.replace(old, new), encoding="utf-8", newline="\n")
+
+
+def run(args, name, report, env, cwd, timeout=1800):
+    """Bound each process group and log; never print environment variables."""
+    logfile = report / (name + ".log")
+    print("BUILD: " + name, flush=True)
+    start = time.monotonic()
+    with logfile.open("wb") as log:
+        proc = subprocess.Popen([str(a) for a in args], cwd=cwd, env=env, stdout=log,
+                                stderr=subprocess.STDOUT, start_new_session=True)
+        while proc.poll() is None:
+            if time.monotonic() - start > timeout or log.tell() > 128 * 1024 * 1024 or shutil.disk_usage(cwd).free < 8 * 1024**3:
+                os.killpg(proc.pid, signal.SIGTERM)
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                    proc.wait()
+                raise RuntimeError("process budget exceeded: " + name)
+            time.sleep(1)
+    if proc.returncode:
+        lines = logfile.read_text(errors="replace").splitlines()
+        print("\n".join(lines[-120:]), flush=True)
+        raise RuntimeError(f"{name} exit {proc.returncode}; see {logfile}")
+
+
+def build(work):
+    if platform.system() != "Darwin":
+        raise RuntimeError("native build needs macOS and real Xcode; no xcrun/SDK facade is used")
+    lock, _ = specs()
+    env = os.environ.copy()
+    env["DEVELOPER_DIR"] = lock["host"]["developer_dir"]
+    version = subprocess.check_output(["/usr/bin/xcodebuild", "-version"], env=env, text=True, timeout=30).strip()
+    if not version.startswith("Xcode " + lock["host"]["xcode"] + "\n"):
+        raise ValueError("requires pinned Xcode 15.4 for the 8796 IORPC ABI: " + version)
+    env["PATH"] = env["DEVELOPER_DIR"] + "/Toolchains/XcodeDefault.xctoolchain/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+    work = Path(work).resolve()
+    work.relative_to((ROOT / "out").resolve())
+    work.mkdir(parents=True, exist_ok=True)
+    report = OUT / "report"
+    report.mkdir(parents=True, exist_ok=True)
+    sdk = subprocess.check_output(["xcrun", "--sdk", "macosx", "--show-sdk-path"], env=env, text=True, timeout=30).strip()
+    tools = {n: subprocess.check_output(["xcrun", "--find", n], env=env, text=True, timeout=30).strip()
+             for n in ("clang", "clang++", "ld", "iig")}
+    probe = work / "allocator-compiler.c"
+    probe.write_text('''#if !__has_builtin(__builtin_xnu_type_summary) || !__has_builtin(__builtin_xnu_type_signature) || !__has_builtin(__builtin_xnu_types_compatible)
+#error Real XNU allocator type builtins are required
+#endif
+struct data { unsigned long a, b; };
+struct pointers { void *a, *b; };
+_Static_assert((__builtin_xnu_type_summary(struct data) & 0xffff) == 4, "data granules");
+_Static_assert((__builtin_xnu_type_summary(struct pointers) & 0xffff) == 2, "pointer granules");
+_Static_assert(__builtin_xnu_types_compatible(struct data, struct data), "same type");
+const char *data_signature = __builtin_xnu_type_signature(struct data);
+const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
+''', encoding="utf-8")
+    run([tools["clang"], "-arch", "arm64", "-ffreestanding", "-Werror", "-c", probe, "-o", work / "allocator-compiler.o"],
+        "allocator-compiler", report, env, work, 60)
+    if struct.unpack_from("<4I", (work / "allocator-compiler.o").read_bytes()) != (0xfeedfacf, 0x100000c, 0, 1):
+        raise ValueError("compiler did not produce plain ARM64 Mach-O")
+    (report / "toolchain.json").write_text(json.dumps({"xcode": version, "sdk": sdk, "tools": tools,
+        "allocator_builtins_compiled": True}, indent=2) + "\n")
+    src = prepare(work)
+    deps = {name: clone_work(name, work) for name in lock["sources"]}
+    fake = work / "fakeroot"
+    fake.mkdir()
+    rewrite(deps["bootstrap_cmds"] / "xcodescripts/install-mig.sh", "-o root -g wheel", "", count=2)
+    rewrite(deps["Libsystem"] / "Libsystem.xcconfig", '#include "<DEVELOPER_DIR>/Makefiles/CoreOS/Xcode/BSD.xcconfig"', "")
+    rewrite(src / "libsyscall/Libsyscall.xcconfig", '#include "<DEVELOPER_DIR>/Makefiles/CoreOS/Xcode/BSD.xcconfig"', "")
+    # Use the open, matching AvailabilityVersions generator as in DXB. This
+    # changes a build-tool path only; no target declaration is substituted.
+    alias = src / "bsd/sys/make_symbol_aliasing.sh"
+    rewrite(alias, 'AVAILABILITY_PL="${SDKROOT}/${DRIVERKITROOT}', 'AVAILABILITY_PL="${FAKEROOT_DIR}')
+    common = ["SDKROOT=macosx", "TARGET_CONFIGS=DEVELOPMENT ARM64 UMS512", "ARCH_CONFIGS=ARM64",
+              "DSTROOT=" + str(fake), "FAKEROOT_DIR=" + str(fake), "KERNEL_BUILDS_IN_PARALLEL=1",
+              "MEMORY_SIZE=" + output("/usr/sbin/sysctl", "-n", "hw.memsize"),
+              "SYSCTL_HW_PHYSICALCPU=2", "SYSCTL_HW_LOGICALCPU=2"]
+    def xbuild(name, action, extra):
+        archs = "arm64 x86_64" if name in ("bootstrap_cmds", "dtrace") else "arm64"
+        run(["xcodebuild", action, "-sdk", "macosx", "-jobs", "2", "ARCHS=" + archs, "VALID_ARCHS=" + archs,
+             "CODE_SIGN_IDENTITY=-", "DSTROOT=" + str(fake), "OBJROOT=" + str(work / (name + ".obj")),
+             "SYMROOT=" + str(work / (name + ".sym")), *extra], name, report, env, deps[name])
+    env["LD"] = tools["clang"]
+    env["LDPLUSPLUS"] = tools["clang++"]
+    xbuild("bootstrap_cmds", "install", ["-project", "mig.xcodeproj", "RC_ProjectNameAndSourceVersion=bootstrap_cmds-129"])
+    xbuild("dtrace", "install", ["-target", "ctfconvert", "-target", "ctfdump", "-target", "ctfmerge"])
+    run(["make", "install", "-j2", "DSTROOT=" + str(fake)], "AvailabilityVersions", report, env, deps["AvailabilityVersions"])
+    # All paths stay inside the isolated work tree; SDK and /Library untouched.
+    mig = next(fake.rglob("mig"))
+    migcom = next(fake.rglob("migcom"))
+    ctf = {n: str(next(fake.rglob(n))) for n in ("ctfconvert", "ctfmerge", "ctfdump")}
+    native = [*common, "MIG=" + str(mig), "MIGCOM=" + str(migcom), *[n.upper() + "=" + p for n, p in ctf.items()],
+              "SRCROOT=" + str(src), "OBJROOT=" + str(work / "xnu.obj"), "SYMROOT=" + str(work / "xnu.sym"),
+              "INCFLAGS_SDK=-I" + str(fake / "usr/local/include/kernel"),
+              "LDFLAGS_KERNEL_SDK=-L" + str(fake / "usr/local/lib/kernel") + " -L" + sdk + "/usr/local/lib/kernel",
+              "BUILD_JSON_COMPILATION_DATABASE=1", "CONCISE=0", "VERBOSE=YES"]
+    run(["make", "installhdrs", "-j2", *native], "xnu-headers", report, env, src)
+    xbuild("Libsystem", "installhdrs", ["FAKEROOT_DIR=" + str(fake)])
+    run(["xcodebuild", "installhdrs", "-sdk", "macosx", "-jobs", "2", "ARCHS=arm64", "VALID_ARCHS=arm64",
+         "TARGET_CONFIGS=DEVELOPMENT ARM64 UMS512", "DSTROOT=" + str(fake), "FAKEROOT_DIR=" + str(fake),
+         "OBJROOT=" + str(work / "libsyscall.obj"), "SYMROOT=" + str(work / "libsyscall.sym")],
+        "libsyscall-headers", report, env, src / "libsyscall")
+    for folder in ("include", "private"):
+        shutil.copytree(deps["libplatform"] / folder, fake / "usr/local/include", dirs_exist_ok=True)
+    firehose = deps["libdispatch"] / "xcodeconfig/libfirehose_kernel.xcconfig"
+    rewrite(firehose, "$(SDKROOT)/System/Library/Frameworks/Kernel.framework/PrivateHeaders",
+            "$(FAKEROOT_DIR)/System/Library/Frameworks/Kernel.framework/PrivateHeaders")
+    rewrite(firehose, "$(SDKROOT)/usr/local/include", "$(FAKEROOT_DIR)/usr/local/include", count=2)
+    xbuild("libdispatch", "install", ["-target", "libfirehose_kernel", "FAKEROOT_DIR=" + str(fake)])
+    (fake / "usr/local/lib/kernel/liblibfirehose_kernel.a").rename(fake / "usr/local/lib/kernel/libfirehose_kernel.a")
+    # Keep-going collects real errors across components; failures stay failures.
+    run(["make", "install", "-k", "-j2", *native], "xnu-kernel", report, env, src, 2700)
+    from macho_kernel import audit
+    kernels = list((work / "xnu.obj").rglob("kernel.development.ums512.unstripped"))
+    if len(kernels) != 1:
+        raise ValueError("expected exactly one upstream linked kernel")
+    result = audit(kernels[0].read_bytes())
+    result.update(kernel_linked=True, arm_init_executed=False, hardware_verified=False)
+    (report / "kernel-audit.json").write_text(json.dumps(result, indent=2) + "\n")
+    print(json.dumps(result, indent=2), flush=True)
+    shutil.copyfile(kernels[0], report / "kernel.development.ums512.macho")
+    print("LINKED AND AUDITED; actual arm_init/QEMU execution remains unverified", flush=True)
+
+
+def capsule():
+    target = OUT / "capsule.zip"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    manifest = {}
+    with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for name in CAPSULE:
+            path = ROOT / name
+            if path.is_symlink() or path.resolve() != path.absolute() or path.stat().st_size > 512 * 1024:
+                raise ValueError("unsafe capsule input: " + name)
+            data = path.read_bytes().replace(b"\r\n", b"\n")
+            data.decode("utf-8")
+            if b"\x00" in data:
+                raise ValueError("binary capsule input: " + name)
+            dest = ".github/workflows/xnu-native.yml" if name == "ci/xnu-native.yml" else name
+            info = zipfile.ZipInfo(dest, date_time=(2023, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(info, data)
+            manifest[dest] = hashlib.sha256(data).hexdigest()
+        ignore = b"/out/\n__pycache__/\n"
+        info = zipfile.ZipInfo(".gitignore", date_time=(2023, 1, 1, 0, 0, 0))
+        info.compress_type = zipfile.ZIP_DEFLATED
+        archive.writestr(info, ignore)
+        manifest[".gitignore"] = hashlib.sha256(ignore).hexdigest()
+    record = {"archive": "out/native/capsule.zip", "sha256": digest(target), "files": manifest,
+              "private_inputs": False, "published": False}
+    (OUT / "capsule.json").write_text(json.dumps(record, indent=2) + "\n")
+    print(json.dumps(record, indent=2))
+    return record
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--fetch", action="store_true")
+    parser.add_argument("--prepare", action="store_true")
+    parser.add_argument("--build", action="store_true")
+    parser.add_argument("--capsule", action="store_true")
+    parser.add_argument("--work", type=Path, default=OUT / "work")
+    args = parser.parse_args()
+    if args.fetch:
+        fetch()
+    if args.prepare:
+        prepare(args.work)
+    if args.build:
+        build(args.work)
+    if args.capsule:
+        capsule()

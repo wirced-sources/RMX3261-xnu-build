@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "distribution": "macos-135",
+  "sources": {
+    "AvailabilityVersions": {
+      "repository": "https://github.com/apple-oss-distributions/AvailabilityVersions",
+      "tag": "AvailabilityVersions-121",
+      "commit": "f3b52ca75ee842a8ac593bd7b03f9f4768c15755",
+      "tree": "dd6288345384a50803aa186d265e5f3e0ec40d73"
+    },
+    "Libsystem": {
+      "repository": "https://github.com/apple-oss-distributions/Libsystem",
+      "tag": "Libsystem-1319.100.3",
+      "commit": "d62d97fb29402b70e3348af7f67771e60c5da477",
+      "tree": "2513971d21328b14b2eed443fb6fad280856da19"
+    },
+    "bootstrap_cmds": {
+      "repository": "https://github.com/apple-oss-distributions/bootstrap_cmds",
+      "tag": "bootstrap_cmds-129",
+      "commit": "fc3180f320239c85da79fc30a281a8830f1301f1",
+      "tree": "14bc6641e2d1767c218dcc071cf29fd3dff132ee"
+    },
+    "dtrace": {
+      "repository": "https://github.com/apple-oss-distributions/dtrace",
+      "tag": "dtrace-397",
+      "commit": "3df488e9184b2ecbeeccebe0cc05f504714722b2",
+      "tree": "b3b1bdc53b3a74c11c446a5982c279c198aa1e4c"
+    },
+    "libdispatch": {
+      "repository": "https://github.com/apple-oss-distributions/libdispatch",
+      "tag": "libdispatch-1415.140.2",
+      "commit": "cdb61e93e803d0093635f356753a9a30c09836db",
+      "tree": "7c1b1f01f4ef38eb30bd596c39a613b311da1977"
+    },
+    "libplatform": {
+      "repository": "https://github.com/apple-oss-distributions/libplatform",
+      "tag": "libplatform-292.120.1.0.1",
+      "commit": "c7b97b198e8329813fd9ca7fe122a82c2cffc109",
+      "tree": "dcb0d8b8ab9a6389d15562e14b44caafc56770ef"
+    }
+  },
+  "host": {
+    "os": "macOS",
+    "xcode": "15.4",
+    "developer_dir": "/Applications/Xcode_15.4.app/Contents/Developer"
+  },
+  "iig_rejected": {
+    "repository": "https://github.com/PureDarwin/iig-tools",
+    "commit": "28010c688caab7eb5400b9c98faa5b1e538e0108",
+    "reason": "Uses FNV-1a instead of Apple's RPC method IDs; ignores trailing Clang arguments. Not an ABI-compatible replacement."
+  }
+}

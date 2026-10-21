@@ -1,0 +1,32 @@
+diff --git a/osfmk/arm/pmap/pmap.c b/osfmk/arm/pmap/pmap.c
+--- a/osfmk/arm/pmap/pmap.c
++++ b/osfmk/arm/pmap/pmap.c
+@@ -84,8 +84,10 @@
+ 
+ #include <arm64/proc_reg.h>
+ #include <pexpert/arm64/boot.h>
++#if !defined(UMS512)
+ #include <arm64/ppl/sart.h>
+ #include <arm64/ppl/uat.h>
++#endif
+ 
+ #if defined(KERNEL_INTEGRITY_KTRR) || defined(KERNEL_INTEGRITY_CTRR)
+ #include <arm64/amcc_rorgn.h>
+@@ -2183,13 +2185,17 @@
+ 	/**
+ 	 * Bootstrap any necessary UAT data structures and values needed from the device tree.
+ 	 */
++#if !defined(UMS512)
+ 	uat_bootstrap();
++#endif
+ 
+ 
+ 	/**
+ 	 * Bootstrap any necessary SART data structures and values needed from the device tree.
+ 	 */
++#if !defined(UMS512)
+ 	sart_bootstrap();
++#endif
+ 
+ 	/**
+ 	 * Don't make any assumptions about the alignment of avail_start before this

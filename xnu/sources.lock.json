@@ -1,0 +1,262 @@
+{
+  "schema": 1,
+  "source_only": true,
+  "ios_userland_reference": "16.7.16 (20H392)",
+  "version_relationship": "Reference selects macOS 13.5 XNU; not an exact iOS 16.7.16 kernel source identity",
+  "reference": {
+    "repository": "https://github.com/dipa-studio/ios-sweet",
+    "commit": "11da58bd050672960c0a83b5bef2176047eea479"
+  },
+  "xnu": {
+    "repository": "https://github.com/apple-oss-distributions/xnu",
+    "tag": "xnu-8796.141.3",
+    "tag_object": "f625db25f47631424dc62ac1c3414b6e530f7e8a",
+    "commit": "1b191cb58250d0705d8a51287127505aa4bc0789",
+    "tree": "5c0fc728332a322c2fb8fde61dfc6152a34c9ad6"
+  },
+  "files": [
+    {
+      "path": "Makefile",
+      "bytes": 10247,
+      "sha256": "6266b79420a7ae738f747a542a6f75634f4b122c6d22eaab75b4e760c83ad9a9",
+      "git_blob_sha1": "e78d8476c3463e075e569e8cc1fa74ac53b85374"
+    },
+    {
+      "path": "README.md",
+      "bytes": 19573,
+      "sha256": "77060745bc6a13aec801c0cad1307943da086fa7053734b7c6df5997312cc3cf",
+      "git_blob_sha1": "b47e08c3fb41ef8d56a743fa78769b99115fe883"
+    },
+    {
+      "path": "bsd/kern/decmpfs.c",
+      "bytes": 70172,
+      "sha256": "549649080ce3791c2edbf8471dca05fb22340eaa06715ca221e82dbf5a28082a",
+      "git_blob_sha1": "95192dd62449918ef81e27f7c44ab7b2f901f11a"
+    },
+    {
+      "path": "bsd/kern/kpi_socket.c",
+      "bytes": 33820,
+      "sha256": "1a6774dda5f7f17ff53ba305c12f5be2a302310b7919f2c87f5bbdf481d82cd5",
+      "git_blob_sha1": "003cfb074a99dfd757bd03ef21582bf3c08b89e6"
+    },
+    {
+      "path": "bsd/kern/sys_generic.c",
+      "bytes": 78822,
+      "sha256": "82fdc240cc03aba4b032173ab33108f9b8491bc3b60bd162f43d0219a5b44158",
+      "git_blob_sha1": "9de68e13c45c6175ab29a14bbae3c6f202d1a793"
+    },
+    {
+      "path": "bsd/kern/uipc_syscalls.c",
+      "bytes": 95715,
+      "sha256": "543e443a70231c52bbdb83c08a38d63d8e60f32751b0f4a096abbd5f14369f55",
+      "git_blob_sha1": "f2bd38e5cf6fb9bed5da784567ac2f7dda2b490a"
+    },
+    {
+      "path": "bsd/nfs/nfs_serv.c",
+      "bytes": 132165,
+      "sha256": "9f5da8109f18f7d0171193b5924307101ad13304558b7b2bc66e2f85add7ef91",
+      "git_blob_sha1": "6ae9b6bc3fde20dbd2f29109450ece2f9b508183"
+    },
+    {
+      "path": "bsd/sys/uio_internal.h",
+      "bytes": 8360,
+      "sha256": "f0351f1b7dda1fb5b7cf25bf8dc37129b35f5f1fb48f5fd194beb612ddef3e1c",
+      "git_blob_sha1": "74a2036cf69e15e4f1671677896be360fa3aeb28"
+    },
+    {
+      "path": "bsd/vfs/vfs_attrlist.c",
+      "bytes": 154406,
+      "sha256": "eacfa324fffa19459b617d93177e8c93d15e7300f34a9f1be3909a8b33a80705",
+      "git_blob_sha1": "cbaa0b221894327c9069ff9d0e61b5cc5d388e3c"
+    },
+    {
+      "path": "bsd/vfs/vfs_lookup.c",
+      "bytes": 59696,
+      "sha256": "c2e29b3cdc444535f5f860dec6fcc6e2968a2682556377d6234536c3b0491f46",
+      "git_blob_sha1": "a05c8e767b3388719f6c6ca6ab16392d96315b07"
+    },
+    {
+      "path": "bsd/vfs/vfs_quota.c",
+      "bytes": 26165,
+      "sha256": "652afa95fc24ab146e12b55f635b06b2d6fd18c534772d2d130317f424c1e831",
+      "git_blob_sha1": "d0476214e5f088125db284eb5400a325aebfb881"
+    },
+    {
+      "path": "bsd/vfs/vfs_subr.c",
+      "bytes": 331778,
+      "sha256": "0b301b017b91ca1909752dc62b124fb198d9b7ffefc8834f99a868efbae45aae",
+      "git_blob_sha1": "66b3cb702b16dfaca148826be2a999cb773d935e"
+    },
+    {
+      "path": "bsd/vfs/vfs_syscalls.c",
+      "bytes": 365522,
+      "sha256": "b8ad0d3863422fe0aef8ab0455d8902e6c6e312b9700852be3faddfb632dad12",
+      "git_blob_sha1": "23ee4d5fa1942dafd3658016d773a4706a5c39ba"
+    },
+    {
+      "path": "bsd/vfs/vfs_vnops.c",
+      "bytes": 59191,
+      "sha256": "4a91ef466df3efa340b433ecf462a9fbc9afc6c31efa79c24bcf0c6bdc657a94",
+      "git_blob_sha1": "5b51e9c46a8df344327d04ba5e42fef9c066690e"
+    },
+    {
+      "path": "config/MASTER",
+      "bytes": 26633,
+      "sha256": "e89579a814c1cf6b32ebf99119fa57d42725e085ccad677d9fdb3175d4f58c3a",
+      "git_blob_sha1": "07147cb3188be12b68481db439e9eddafc812c29"
+    },
+    {
+      "path": "config/MASTER.arm64.MacOSX",
+      "bytes": 7055,
+      "sha256": "b9add4fd0938b7bdcd39c2f415b996d8f02cf7a6116c3ac3bcae3a2bd511e632",
+      "git_blob_sha1": "d3751b8f384563b1ea8535932109eab7b18b0a42"
+    },
+    {
+      "path": "config/Private.arm64.exports",
+      "bytes": 3957,
+      "sha256": "00e242d4bb226e76c5d759be06606722bcd006dba267cfc5b5e42a0b44ea9dc9",
+      "git_blob_sha1": "db31d71610f405696b825a206ff192db9d4e2d63"
+    },
+    {
+      "path": "config/Private.exports",
+      "bytes": 32964,
+      "sha256": "1e196913b4cac024ad1c2ebc1123fdb05a7fce095dd71d7cace0e8ba68864032",
+      "git_blob_sha1": "9432f3405e36478cac30ece7e369a71676d7a075"
+    },
+    {
+      "path": "libkern/libkern/zconf.h",
+      "bytes": 10805,
+      "sha256": "71d589d47bebbe0f7ce5fc05210faf1e993d9622e85c882439c32456ff12d6ed",
+      "git_blob_sha1": "919a81322b57e661c3fd9352e9956c5b949a2fd6"
+    },
+    {
+      "path": "libkern/libkern/zlib.h",
+      "bytes": 67707,
+      "sha256": "a3aa40faa1ecb75e48f7d384fbbe281aa01d126e73a3afa29fbbe030f5c2303d",
+      "git_blob_sha1": "1883b6f5af6690e19f50018e9efddf800ae9cb55"
+    },
+    {
+      "path": "libkern/zlib/adler32.c",
+      "bytes": 5895,
+      "sha256": "20f6c760852c9a7c6303d9df2be3e8e448804bb673ca96779655d4694fb1c713",
+      "git_blob_sha1": "c15ae8e24bb1e90280b3461ecdf00a289d0a798c"
+    },
+    {
+      "path": "libkern/zlib/compress.c",
+      "bytes": 3759,
+      "sha256": "d1400a25d0301f42501bcdb46b1b389a19366c9b9863fdcb6bc1bd00931da1dc",
+      "git_blob_sha1": "c3d69b2d0e5246d8cc1f1056f41635d759e27dad"
+    },
+    {
+      "path": "makedefs/MakeInc.cmd",
+      "bytes": 16295,
+      "sha256": "4bb6b5aec167b8a41ff19615714f11300e79be7710def4b7d2da5be61a189509",
+      "git_blob_sha1": "bc39e19b3b8ebac2eaa6273feabba8bfbfcd661c"
+    },
+    {
+      "path": "makedefs/MakeInc.def",
+      "bytes": 39832,
+      "sha256": "3574d6e9ca26f05fd7f88cb675eaabeb28804a9bc6b7f10b592df5a4f13580a9",
+      "git_blob_sha1": "5bd6f23dd10c3316ba0ac3ca5a1515256753975e"
+    },
+    {
+      "path": "makedefs/MakeInc.top",
+      "bytes": 33254,
+      "sha256": "6af3ed157aaa57f031ff3144a112e888de54511acec534220ac94c19b022f92e",
+      "git_blob_sha1": "0316792a3f4257c2de157fad5f1d5d9f6a6f033e"
+    },
+    {
+      "path": "osfmk/arm/pmap/pmap.h",
+      "bytes": 29243,
+      "sha256": "228414f8405c12ae2021fbfb1d53c37d7509fa6b7afa97a78ba4a5eef48f2cde",
+      "git_blob_sha1": "df672c65b144757e6cf0b349fc2650703b5d52d0"
+    },
+    {
+      "path": "osfmk/arm64/arm_vm_init.c",
+      "bytes": 89175,
+      "sha256": "3aef6df1e86fea3061ef4b5b83053502e2c50bf2e636d6949c4d55a58181e3f5",
+      "git_blob_sha1": "d89b0f19cff72967d8f83d22c75ebd916c14f00a"
+    },
+    {
+      "path": "osfmk/arm64/proc_reg.h",
+      "bytes": 98515,
+      "sha256": "129f4d42d97c8c403dd83ebbb99bb7ccc3954adfcbb9621bcf08f8f8b218b33b",
+      "git_blob_sha1": "133b07fd6155e84414048a2fbee39bb3ac1a2fbe"
+    },
+    {
+      "path": "osfmk/arm64/start.s",
+      "bytes": 24304,
+      "sha256": "bf92967ea96e638f5a9a002cd4e478272f08616531d212caa919944c85e8a023",
+      "git_blob_sha1": "e5336e5a1cce791baefa1e96c8dc5ae71c79a605"
+    },
+    {
+      "path": "osfmk/conf/files.arm64",
+      "bytes": 3784,
+      "sha256": "6f7cff536fd02ad8f34c037d980a0d1cace352fec4ced04fad4234bbca5eb5a9",
+      "git_blob_sha1": "c40d57bcc67712df695017030b3a8494a64925b0"
+    },
+    {
+      "path": "pexpert/arm/pe_fiq.c",
+      "bytes": 5188,
+      "sha256": "c67135846514ce529291ae9566adc091cc3a8dd64ad6f643d4deb862f13bc194",
+      "git_blob_sha1": "3ad743fc3efb5254343074eab8edb91b55725f3d"
+    },
+    {
+      "path": "pexpert/arm/pe_init.c",
+      "bytes": 25404,
+      "sha256": "828368f9415c9749f661563a714152d88f70ce639faae867c900dcfdbdf53b79",
+      "git_blob_sha1": "04dda5336f933390fbb5cb4a7510e830ad02eea0"
+    },
+    {
+      "path": "pexpert/pexpert/arm64/Makefile",
+      "bytes": 1226,
+      "sha256": "0d24437f9af00daca441365d90f44b8f909e14e10c6e7e26a30a8010da06740d",
+      "git_blob_sha1": "8226b8cd27cbe7dac928eecf48d3b9b6358837cc"
+    },
+    {
+      "path": "pexpert/pexpert/arm64/board_config.h",
+      "bytes": 3975,
+      "sha256": "1de4d28c9f2896dadbe0e1a430a9b2cea463817dd13523f03583a3a4c3edaab9",
+      "git_blob_sha1": "945453413cd8f055449a654639fbea6a083e74cc"
+    },
+    {
+      "path": "pexpert/pexpert/arm64/boot.h",
+      "bytes": 3168,
+      "sha256": "efdfec46319cb147297682a8faebe02873f845261b57f7511ab8e15c13ef3439",
+      "git_blob_sha1": "2c2186ffbca5b4784b4614afb663a0ff0a6c79ed"
+    },
+    {
+      "path": "security/mac_vfs_subr.c",
+      "bytes": 5600,
+      "sha256": "64161548371c95339562ee13a33b19acdba9aa6c8f1afa12f6081c0a9a1ab645",
+      "git_blob_sha1": "97028c06bb927d4ad9f27e65d3d6a074421378f2"
+    }
+  ],
+  "build_reference": {
+    "repository": "https://github.com/blacktop/darwin-xnu-build",
+    "commit": "663906528d1cd5ea8fde7de6f16de73db9511549",
+    "file": "dxb/build.sh",
+    "bytes": 40192,
+    "sha256": "a3e01bea6aa34cd983aa809a005913ec0844c54ff4cf7eeeec5cd0f82618f01f",
+    "git_blob_sha1": "fb3441520d8b11a5c47308adb9a12da7d0a25780"
+  },
+  "release": {
+    "repository": "https://github.com/apple-oss-distributions/distribution-macOS",
+    "tag": "macos-135",
+    "commit": "1103a82bbc0ce0def4c198db70251c29c27b2040",
+    "file": "macos-135-release.json",
+    "bytes": 11198,
+    "sha256": "bce02865b191e957d2208c64a028de4311eed67e11b277178acfb91a6b71f2ee",
+    "git_blob_sha1": "47f4e1e86583ad1a2ee6c8425efb152c4f5f9f1c"
+  },
+  "dependency_tags": {
+    "AvailabilityVersions": "AvailabilityVersions-121",
+    "Libsystem": "Libsystem-1319.100.3",
+    "bootstrap_cmds": "bootstrap_cmds-129",
+    "dtrace": "dtrace-397",
+    "hfs": "hfs-627.100.6",
+    "libdispatch": "libdispatch-1415.140.2",
+    "libplatform": "libplatform-292.120.1.0.1",
+    "libpthread": "libpthread-514.100.2"
+  }
+}
