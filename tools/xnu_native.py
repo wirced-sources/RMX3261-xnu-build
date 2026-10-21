@@ -35,6 +35,7 @@ PATCHES = (
     "xnu/patches-ums512/0009-portable-lp64-build-fixes.patch",
     "xnu/patches-ums512/0010-native-portability.patch",
     "xnu/patches-ums512/0011-native-arm64-integration.patch",
+    "xnu/patches-ums512/0012-unused-uart-registration.patch",
     "xnu/patches/0005-non-pac-build-fixes.patch",
 )
 CAPSULE = (
@@ -196,6 +197,11 @@ def run(args, name, report, env, cwd, timeout=1800):
             time.sleep(1)
     if proc.returncode:
         lines = logfile.read_text(errors="replace").splitlines()
+        missing = sorted(set(re.findall(r'^\s*"([^"\n]+)", referenced from:', "\n".join(lines), re.M)))
+        if missing:
+            (report / (name + "-undefined.json")).write_text(json.dumps(missing, indent=2) + "\n")
+            print("UNRESOLVED SYMBOLS: " + str(len(missing)), flush=True)
+            print("\n".join(missing[:500]), flush=True)
         # Recursive make may continue installing headers long after a compiler
         # failure. Export bounded ERROR CONTEXT, not just that unrelated tail.
         indices = set()
@@ -313,6 +319,11 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
               # PF_KEY keeps its allocation/encoded-length assertions even
               # where the current constant key-size limits prove them true.
               "key.o_CWARNFLAGS_ADD=-Wno-error=tautological-value-range-compare",
+              # zalloc's bounds check covers every current two-bit heap ID.
+              # Skywalk logging compares non-error flag combinations against
+              # its error sentinel. Retain those checks and visible warnings.
+              *[name + ".o_CWARNFLAGS_ADD=-Wno-error=tautological-value-range-compare"
+                for name in ("zalloc", "nx_monitor", "nx_netif", "nexus_adapter")],
               # In 8796, BUILD_JSON_COMPILATION_DATABASE=1 REPLACES compiling
               # with command generation. It must not be set for a real build.
               "CONCISE=0", "VERBOSE=NO"]
