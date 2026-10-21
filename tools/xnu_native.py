@@ -16,7 +16,6 @@ import shutil
 import signal
 import struct
 import subprocess
-import sys
 import time
 import zipfile
 
@@ -32,6 +31,7 @@ PATCHES = (
     "xnu/patches-ums512/0005-exclude-apple-iommu.patch",
     "xnu/patches-ums512/0006-pmap-build-context.patch",
     "xnu/patches-ums512/0007-cortex-source-selection.patch",
+    "xnu/patches-ums512/0008-vnode-argument-offset.patch",
     "xnu/patches/0005-non-pac-build-fixes.patch",
 )
 CAPSULE = (
@@ -183,9 +183,18 @@ def run(args, name, report, env, cwd, timeout=1800):
         # Recursive make may continue installing headers long after a compiler
         # failure. Export bounded ERROR CONTEXT, not just that unrelated tail.
         indices = set()
+        families = {}
         for i, line in enumerate(lines):
             if re.search(r"(?i)(?:fatal error:|\berror:|\bError [0-9]|No rule to make|Undefined symbols|^ld:|not found|No such file|SyntaxError|ImportError|ModuleNotFoundError)", line):
-                indices.update(range(max(0, i - 2), min(len(lines), i + 5)))
+                warning = re.search(r"\[-W[^]]+\]", line)
+                key = warning[0] if warning else re.sub(r"'[^']*'|`[^']*'|\b[0-9]+\b", "<value>", line.split("error:")[-1])
+                count, sample = families.get(key, (0, line))
+                families[key] = (count + 1, sample)
+                if count < 3:
+                    indices.update(range(max(0, i - 2), min(len(lines), i + 7)))
+        print("DIAGNOSTIC FAMILIES:", flush=True)
+        for count, sample in list(families.values())[:120]:
+            print(str(count) + " occurrences: " + sample[:1000], flush=True)
         selected = sorted(indices)[:700]
         if not selected:
             selected = list(range(max(0, len(lines) - 35), len(lines)))
@@ -268,6 +277,9 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
               "SRCROOT=" + str(src), "OBJROOT=" + str(work / "xnu.obj"), "SYMROOT=" + str(work / "xnu.sym"),
               "INCFLAGS_SDK=-I" + str(fake / "usr/local/include/kernel"),
               "LDFLAGS_KERNEL_SDK=-L" + str(fake / "usr/local/lib/kernel") + " -L" + sdk + "/usr/local/lib/kernel",
+              # Newer Clang reports intentionally dead debug/statistics locals.
+              # Keep the warning visible; no blanket BUILD_WERROR=0 or check removal.
+              "RC_NONARCH_CFLAGS=-Wno-error=unused-but-set-variable",
               # In 8796, BUILD_JSON_COMPILATION_DATABASE=1 REPLACES compiling
               # with command generation. It must not be set for a real build.
               "CONCISE=0", "VERBOSE=NO"]
@@ -290,16 +302,23 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
         run(["make", "install", "-k", "-j2", *native], "xnu-kernel", report, env, src, 2700)
     finally:
         objects = {}
+        formats = {"Mach-O arm64 MH_OBJECT": 0, "LLVM bitcode (architecture not independently audited)": 0}
         target = work / "xnu.obj/DEVELOPMENT_ARM64_UMS512"
         for path in target.rglob("*.o"):
             with path.open("rb") as stream:
                 header = stream.read(16)
             if len(header) == 16 and struct.unpack("<4I", header) == (0xfeedfacf, 0x100000c, 0, 1):
-                objects[path.relative_to(target).as_posix()] = digest(path)
+                kind = "Mach-O arm64 MH_OBJECT"
+            elif header[:4] in (b"BC\xc0\xde", b"\xde\xc0\x17\x0b"):
+                kind = "LLVM bitcode (architecture not independently audited)"
+            else:
+                continue
+            objects[path.relative_to(target).as_posix()] = {"sha256": digest(path), "format": kind}
+            formats[kind] += 1
         core = {n: h for n, h in objects.items() if Path(n).stem in (
             "arm_init", "arm_vm_init", "pmap", "vm_map", "vm_fault", "vm_page", "kalloc", "zalloc",
             "ipc_kmsg", "mach_msg", "device_tree", "OSObject", "IOService")}
-        inventory = {"plain_arm64_macho_objects": len(objects), "core_objects": core,
+        inventory = {"object_formats": formats, "core_objects": core,
                      "kernel_linked": False, "arm_init_executed": False}
         (report / "object-inventory.json").write_text(json.dumps(inventory, indent=2) + "\n")
         print(json.dumps(inventory, indent=2), flush=True)

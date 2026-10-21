@@ -1,0 +1,12 @@
+diff --git a/bsd/sys/vnode_internal.h b/bsd/sys/vnode_internal.h
+--- a/bsd/sys/vnode_internal.h
++++ b/bsd/sys/vnode_internal.h
+@@ -424,7 +424,7 @@
+  * you might want to consult Intrisics.h's XtOffset{,Of,To}.
+  */
+ #define VOPARG_OFFSET(p_type, field) \
+-	((int) (((char *) (&(((p_type)NULL)->field))) - ((char *) NULL)))
++	((int)__builtin_offsetof(__typeof__(*(p_type)0), field))
+ #define VOPARG_OFFSETOF(s_type, field) \
+ 	VOPARG_OFFSET(s_type*,field)
+ #define VOPARG_OFFSETTO(S_TYPE, S_OFFSET, STRUCT_P) \
