@@ -22,6 +22,20 @@ def align(n, a=0x4000):
     return (n + a - 1) & -a
 
 
+def image_cstring(data, segments, pointer, limit=512):
+    """Only public audited-image strings, never arbitrary target memory."""
+    owner = next((s for s in segments if s['vmaddr'] <= pointer < s['vmaddr']+s['filesize']),None)
+    if owner:
+        begin = owner['fileoff']+pointer-owner['vmaddr']
+        end = min(begin+limit,owner['fileoff']+owner['filesize'])
+        terminator = data.find(b'\0',begin,end)
+        if terminator > begin:
+            text = data[begin:terminator]
+            if all(c in (9,10,13) or 32 <= c < 127 for c in text):
+                return text.decode('ascii')
+    return None
+
+
 def symbols(data):
     at = 32
     for _ in range(struct.unpack_from('<I', data, 16)[0]):
@@ -173,7 +187,8 @@ class RSP:
         data = bytes.fromhex(self.command('g'))
         if len(data) < 33*8:
             raise ValueError('short AArch64 register set')
-        return {name: hex(struct.unpack_from('<Q', data, i*8)[0]) for name,i in (('x0',0),('x12',12),('lr',30),('sp',31),('pc',32))}
+        indices = [(f'x{i}',i) for i in range(6)] + [('x12',12),('lr',30),('sp',31),('pc',32)]
+        return {name: hex(struct.unpack_from('<Q', data, i*8)[0]) for name,i in indices}
 
 
 def execute(kernel, record, out, qemu, clang):
@@ -239,7 +254,9 @@ def execute(kernel, record, out, qemu, clang):
     log = (out/'qemu.log').open('wb')
     proc = subprocess.Popen([*base_cmd,'-display','none','-serial','none','-monitor','none','-no-reboot','-S',
         '-gdb',f'tcp:127.0.0.1:{port}','-kernel',str(image),'-device',f'loader,file={out / "kernel.physical.bin"},addr={header_pa:#x},force-raw=on'],stdout=log,stderr=log)
-    result = {'kernel_sha256':report['sha256'],'arm_init_executed':False,'hardware_verified':False,'stops':[]}
+    result = {'kernel_sha256':report['sha256'],'arm_init_executed':False,
+              'kernel_boot_completed':False,'hardware_verified':False,'stops':[],
+              'returned_init_functions':[]}
     try:
         deadline = time.monotonic()+10
         while True:
@@ -283,10 +300,20 @@ def execute(kernel, record, out, qemu, clang):
             if not result['arm_init_executed']:
                 raise ValueError('genuine arm_init instructions did not execute')
             # Do not describe a reached function boundary as a working subsystem.
-            boundaries = {sym[n]:n for n in ('_arm_vm_init','_kernel_bootstrap','_panic')}
+            names = ('_arm_vm_init','_pmap_bootstrap','_kernel_bootstrap','_vm_mem_bootstrap',
+                     '_vm_mem_init','_zone_bootstrap','_kmem_bootstrap','_ipc_bootstrap',
+                     '_ipc_init','_sched_init','_bsd_init','_Assert','_panic')
+            boundaries = {sym[n]:n for n in names if n in sym}
             for address in boundaries:
-                rsp.command(f'Z1,{address:x},4')
-            for _ in range(3):
+                if rsp.command(f'Z1,{address:x},4') != 'OK':
+                    raise RuntimeError('QEMU init-boundary breakpoint unavailable')
+            deadline = time.monotonic()+45
+            for _ in range(32):
+                remaining = deadline-time.monotonic()
+                if remaining <= 0:
+                    result['bounded_run_timeout'] = True
+                    break
+                conn.settimeout(min(15,remaining))
                 try:
                     rsp.command('c')
                 except socket.timeout:
@@ -296,18 +323,41 @@ def execute(kernel, record, out, qemu, clang):
                 regs = rsp.registers()
                 name = boundaries.get(int(regs['pc'],16),'other stop')
                 result['stops'].append({'boundary':name,**regs})
+                if name == '_Assert':
+                    result['assertion_reached'] = True
+                    result['assertion_file'] = image_cstring(data,report['segments'],int(regs['x0'],16))
+                    result['assertion_line'] = int(regs['x1'],16) & 0xffffffff
+                    result['assertion_expression'] = image_cstring(data,report['segments'],int(regs['x2'],16))
                 if name == '_panic':
-                    pointer = int(regs['x0'],16)
-                    owner = next((s for s in report['segments'] if s['vmaddr'] <= pointer < s['vmaddr']+s['filesize']),None)
-                    if owner:
-                        begin = owner['fileoff']+pointer-owner['vmaddr']
-                        end = min(begin+512,owner['fileoff']+owner['filesize'])
-                        text = data[begin:end].split(b'\0',1)[0]
-                        if text and all(c in (9,10,13) or 32 <= c < 127 for c in text):
-                            result['panic_format_from_audited_kernel'] = text.decode('ascii')
-                if name in ('_panic','other stop'):
+                    result['panic_reached'] = True
+                    for i in range(6):
+                        text = image_cstring(data,report['segments'],int(regs[f'x{i}'],16))
+                        if text:
+                            key = 'panic_format_from_audited_kernel' if i == 0 else f'panic_x{i}_string_from_audited_kernel'
+                            result[key] = text
+                    # Darwin ARM64 variadic arguments are passed on the stack.
+                    # Read only this bounded QEMU-generated argument block;
+                    # export source strings and numeric words, not a raw dump.
+                    try:
+                        block = bytes.fromhex(rsp.command(f'm{int(regs["sp"],16):x},40'))
+                        values = struct.unpack('<8Q',block)
+                        result['panic_stack_argument_words'] = [hex(v) for v in values]
+                        result['panic_stack_source_strings'] = [image_cstring(data,report['segments'],v) for v in values]
+                    except (ValueError,RuntimeError) as error:
+                        result['panic_argument_decode_error'] = str(error)
+                if name in ('_Assert','_panic','other stop'):
                     break
                 rsp.command(f'z1,{int(regs["pc"],16):x},4')
+                if name.startswith('return:'):
+                    result['returned_init_functions'].append(name[7:])
+                elif name != '_kernel_bootstrap':
+                    # A function entry does not prove initialization completed.
+                    # Observe its real caller return address without changing LR.
+                    address = int(regs['lr'],16)
+                    if address not in boundaries:
+                        boundaries[address] = 'return:'+name
+                        if rsp.command(f'Z1,{address:x},4') != 'OK':
+                            raise RuntimeError('QEMU init-return breakpoint unavailable')
     except Exception as error:
         result['error'] = str(error)
         raise
@@ -319,6 +369,17 @@ def execute(kernel, record, out, qemu, clang):
             proc.kill()
             proc.wait(timeout=5)
         log.close()
+        ordered = sorted((address,name) for name,address in sym.items() if address)
+        from bisect import bisect_right
+        for stop in [result.get('arm_init_entry',{}),*result['stops']]:
+            for register in ('pc','lr'):
+                if register not in stop:
+                    continue
+                address = int(stop[register],16)
+                index = bisect_right(ordered,(address,chr(0x10ffff)))-1
+                if index >= 0 and address-ordered[index][0] < 0x10000:
+                    base,name = ordered[index]
+                    stop[register+'_symbol'] = name+'+'+hex(address-base)
         if result.get('error'):
             tail = (out/'qemu.log').read_bytes()[-4096:].decode('utf-8',errors='replace')
             if tail:

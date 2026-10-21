@@ -95,7 +95,13 @@ be mixed with Apple's generated DriverKit interfaces.
 ## Verified state
 
 Xcode15.4 in the authorized macOS CI has compiled genuine allocator builtins,
-built the native host dependencies, generated XNU headers and begun target
-compilation. Full kernel link and genuine arm_init execution remain separate
-acceptance gates. Read STATUS.md and NOTES.md in the main local project for
-exact local build and QEMU outcomes.
+built the native host dependencies, generated XNU headers and LINKED/AUDITED
+the full ARM64 MH_EXECUTE (19636296 bytes, zero unresolved imports). QEMU9.2.4
+is built on the same ephemeral runner. Run39678485260 also completed upstream
+make install and executed genuine arm_init instructions in QEMU, reaching
+arm_vm_init and then an assertion. This is early execution, not a completed
+kernel boot or working iOS. The board uses full16KB L1 (47-bit VA) to cover the
+stock MacOSX ARM_LARGE_MEMORY link address; subpage L1 only covers39 bits.
+Unavailable Apple-only PMU/IOMMU interfaces are removed from explicit export
+lists rather than supplied by fake implementations. Read STATUS.md and NOTES.md
+in the main local project for exact build and QEMU outcomes.
