@@ -56,9 +56,11 @@ account quota is unknown. Bounded errors and the final audit print to job logs.
 Reports and any audited kernel remain in the local build workspace.
 The job refuses private repositories to avoid consuming paid runner minutes.
 
-Publication/push and dispatch are separate actions requiring the user's explicit
-authorization; `--capsule` does neither. No repository has been published and no
-CI job has been dispatched during preparation.
+Publication/push and dispatch require the user's explicit authorization;
+`--capsule` does neither. The user subsequently authorized the independent
+public repository [RMX3261-xnu-build](https://github.com/wirced-sources/RMX3261-xnu-build)
+and safe updates. Every exported revision and its entire separate history are
+audited before push. The main project's Git history is never published.
 
 GitHub currently documents Xcode 15.4 on
 [macos-14](https://github.com/actions/runner-images/blob/main/images/macos/macos-14-Readme.md).
@@ -70,6 +72,8 @@ be mixed with Apple's generated DriverKit interfaces.
 
 ## Verified state
 
-The driver and capsule are preparation, not a BUILT or LINKED kernel. Native
-Apple tool execution has not occurred in this Windows/WSL environment. Read the
-current STATUS.md and NOTES.md for exact local build and QEMU outcomes.
+Xcode15.4 in the authorized macOS CI has compiled genuine allocator builtins,
+built the native host dependencies, generated XNU headers and begun target
+compilation. Full kernel link and genuine arm_init execution remain separate
+acceptance gates. Read STATUS.md and NOTES.md in the main local project for
+exact local build and QEMU outcomes.

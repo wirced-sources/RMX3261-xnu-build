@@ -32,6 +32,7 @@ PATCHES = (
     "xnu/patches-ums512/0006-pmap-build-context.patch",
     "xnu/patches-ums512/0007-cortex-source-selection.patch",
     "xnu/patches-ums512/0008-vnode-argument-offset.patch",
+    "xnu/patches-ums512/0009-portable-lp64-build-fixes.patch",
     "xnu/patches/0005-non-pac-build-fixes.patch",
 )
 CAPSULE = (
@@ -185,6 +186,9 @@ def run(args, name, report, env, cwd, timeout=1800):
         indices = set()
         families = {}
         for i, line in enumerate(lines):
+            # Downstream make failures are not separate compiler root causes.
+            if re.search(r"make(?:\[[0-9]+\])?: \*\*\*.*Error [0-9]+", line):
+                continue
             if re.search(r"(?i)(?:fatal error:|\berror:|\bError [0-9]|No rule to make|Undefined symbols|^ld:|not found|No such file|SyntaxError|ImportError|ModuleNotFoundError)", line):
                 warning = re.search(r"\[-W[^]]+\]", line)
                 key = warning[0] if warning else re.sub(r"'[^']*'|`[^']*'|\b[0-9]+\b", "<value>", line.split("error:")[-1])
@@ -192,7 +196,7 @@ def run(args, name, report, env, cwd, timeout=1800):
                 families[key] = (count + 1, sample)
                 if count < 3:
                     indices.update(range(max(0, i - 2), min(len(lines), i + 7)))
-        print("DIAGNOSTIC FAMILIES:", flush=True)
+        print("DIAGNOSTIC FAMILIES: " + str(len(families)) + " (at most120 shown)", flush=True)
         for count, sample in list(families.values())[:120]:
             print(str(count) + " occurrences: " + sample[:1000], flush=True)
         selected = sorted(indices)[:700]
@@ -298,13 +302,16 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
     xbuild("libdispatch", "install", ["-target", "libfirehose_kernel", "FAKEROOT_DIR=" + str(fake)])
     (fake / "usr/local/lib/kernel/liblibfirehose_kernel.a").rename(fake / "usr/local/lib/kernel/libfirehose_kernel.a")
     # Keep-going collects real errors across components; failures stay failures.
+    make_error = None
     try:
         run(["make", "install", "-k", "-j2", *native], "xnu-kernel", report, env, src, 2700)
+    except RuntimeError as error:
+        make_error = error
     finally:
         objects = {}
         formats = {"Mach-O arm64 MH_OBJECT": 0, "LLVM bitcode (architecture not independently audited)": 0}
         target = work / "xnu.obj/DEVELOPMENT_ARM64_UMS512"
-        for path in target.rglob("*.o"):
+        for path in [*target.rglob("*.o"), *target.rglob("*.cpo")]:
             with path.open("rb") as stream:
                 header = stream.read(16)
             if len(header) == 16 and struct.unpack("<4I", header) == (0xfeedfacf, 0x100000c, 0, 1):
@@ -324,14 +331,19 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
         print(json.dumps(inventory, indent=2), flush=True)
     from macho_kernel import audit
     kernels = list((work / "xnu.obj").rglob("kernel.development.ums512.unstripped"))
+    if not kernels and make_error:
+        raise make_error
     if len(kernels) != 1:
         raise ValueError("expected exactly one upstream linked kernel")
     result = audit(kernels[0].read_bytes())
-    result.update(kernel_linked=True, arm_init_executed=False, hardware_verified=False)
+    result.update(kernel_linked=True, arm_init_executed=False, hardware_verified=False,
+                  upstream_install_succeeded=make_error is None)
     (report / "kernel-audit.json").write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result, indent=2), flush=True)
     shutil.copyfile(kernels[0], report / "kernel.development.ums512.macho")
     print("LINKED AND AUDITED; actual arm_init/QEMU execution remains unverified", flush=True)
+    if make_error:
+        raise make_error
 
 
 def capsule():

@@ -1,0 +1,256 @@
+diff --git a/libkern/libkern/c++/OSMetaClass.h b/libkern/libkern/c++/OSMetaClass.h
+--- a/libkern/libkern/c++/OSMetaClass.h
++++ b/libkern/libkern/c++/OSMetaClass.h
+@@ -1146,7 +1146,7 @@
+  * for as long as its kernel extension is loaded,
+  * OSMetaClass does not use reference-counting.
+  */
+-	virtual void retain() const;
++	virtual void retain() const override;
+ 
+ 
+ /*!
+@@ -1160,7 +1160,7 @@
+  * for as long as its kernel extension is loaded,
+  * OSMetaClass does not use reference-counting.
+  */
+-	virtual void release() const;
++	virtual void release() const override;
+ 
+ 
+ /*!
+@@ -1177,7 +1177,7 @@
+  * for as long as its kernel extension is loaded,
+  * OSMetaClass does not use reference-counting.
+  */
+-	virtual void release(int freeWhen) const;
++	virtual void release(int freeWhen) const override;
+ 
+ 
+ /*!
+@@ -1194,7 +1194,7 @@
+  * for as long as its kernel extension is loaded,
+  * OSMetaClass does not use reference-counting.
+  */
+-	virtual void taggedRetain(const void * tag = NULL) const;
++	virtual void taggedRetain(const void * tag = NULL) const override;
+ 
+ 
+ /*!
+@@ -1211,7 +1211,7 @@
+  * for as long as its kernel extension is loaded,
+  * OSMetaClass does not use reference-counting.
+  */
+-	virtual void taggedRelease(const void * tag = NULL) const;
++	virtual void taggedRelease(const void * tag = NULL) const override;
+ 
+ 
+ /*!
+@@ -1231,7 +1231,7 @@
+  */
+ 	virtual void taggedRelease(
+ 		const void * tag,
+-		const int    freeWhen) const;
++		const int    freeWhen) const override;
+ 
+ 
+ /*!
+@@ -1249,7 +1249,7 @@
+  * for as long as its kernel extension is loaded,
+  * OSMetaClass does not use reference-counting.
+  */
+-	virtual int getRetainCount() const;
++	virtual int getRetainCount() const override;
+ 
+ 
+ /* Not to be included in headerdoc.
+@@ -1334,7 +1334,7 @@
+  * from the run-time type information system.
+  */
+ 	virtual
+-	~OSMetaClass();
++	~OSMetaClass() override;
+ 
+ // Needs to be overriden as NULL as all OSMetaClass objects are allocated
+ // statically at compile time, don't accidently try to free them.
+diff --git a/osfmk/kern/kpc.h b/osfmk/kern/kpc.h
+--- a/osfmk/kern/kpc.h
++++ b/osfmk/kern/kpc.h
+@@ -263,7 +263,9 @@
+  * KPC PRIVATE
+  */
+ 
++#if KPC
+ extern uint32_t kpc_actionid[KPC_MAX_COUNTERS];
++#endif /* KPC */
+ 
+ /* handler for mp operations */
+ struct kpc_config_remote {
+diff --git a/osfmk/kern/processor.c b/osfmk/kern/processor.c
+--- a/osfmk/kern/processor.c
++++ b/osfmk/kern/processor.c
+@@ -148,7 +148,9 @@
+ 
+ static timer_call_func_t running_timer_funcs[] = {
+ 	[RUNNING_TIMER_QUANTUM] = thread_quantum_expire,
++#if KPERF
+ 	[RUNNING_TIMER_KPERF] = kperf_timer_expire,
++#endif /* KPERF */
+ };
+ static_assert(sizeof(running_timer_funcs) / sizeof(running_timer_funcs[0])
+     == RUNNING_TIMER_MAX, "missing running timer function");
+diff --git a/osfmk/arm/machine_routines.h b/osfmk/arm/machine_routines.h
+--- a/osfmk/arm/machine_routines.h
++++ b/osfmk/arm/machine_routines.h
+@@ -160,7 +160,8 @@
+ typedef void (*time_base_enable_t)(cpu_id_t cpu_id, boolean_t enable);
+ #if defined(PEXPERT_KERNEL_PRIVATE) || defined(MACH_KERNEL_PRIVATE)
+ /* Type for the Processor Cache Dispatch function */
+-typedef void (*cache_dispatch_t)(cpu_id_t cpu_id, unsigned int select, unsigned int param0, unsigned int param1);
++/* Payloads can carry physical addresses or pointers; preserve native width. */
++typedef void (*cache_dispatch_t)(cpu_id_t cpu_id, unsigned int select, uintptr_t param0, uintptr_t param1);
+ 
+ typedef uint32_t (*get_decrementer_t)(void);
+ typedef void (*set_decrementer_t)(uint32_t);
+diff --git a/osfmk/arm/caches.c b/osfmk/arm/caches.c
+--- a/osfmk/arm/caches.c
++++ b/osfmk/arm/caches.c
+@@ -83,7 +83,7 @@
+ 		}
+ 		FlushPoC_DcacheRegion(vaddr, (unsigned)count);
+ 		if (paddr && (cpu_data_ptr->cpu_cache_dispatch != NULL)) {
+-			cpu_data_ptr->cpu_cache_dispatch(cpu_data_ptr->cpu_id, CacheCleanFlushRegion, (unsigned int) paddr, (unsigned)count);
++			cpu_data_ptr->cpu_cache_dispatch(cpu_data_ptr->cpu_id, CacheCleanFlushRegion, (uintptr_t) paddr, (unsigned)count);
+ 		}
+ 		addr += count;
+ 		length -= count;
+@@ -117,7 +117,7 @@
+ 		}
+ 		CleanPoC_DcacheRegion(vaddr, (unsigned)count);
+ 		if (paddr && (cpu_data_ptr->cpu_cache_dispatch != NULL)) {
+-			cpu_data_ptr->cpu_cache_dispatch(cpu_data_ptr->cpu_id, CacheCleanRegion, (unsigned int) paddr, (unsigned)count);
++			cpu_data_ptr->cpu_cache_dispatch(cpu_data_ptr->cpu_id, CacheCleanRegion, (uintptr_t) paddr, (unsigned)count);
+ 		}
+ 		addr += count;
+ 		length -= count;
+@@ -180,7 +180,7 @@
+ 			FlushPoC_DcacheRegion(vaddr, (unsigned)count);
+ 			if (isphysmem(paddr)) {
+ 				if (cpu_data_ptr->cpu_cache_dispatch != NULL) {
+-					cpu_data_ptr->cpu_cache_dispatch(cpu_data_ptr->cpu_id, CacheCleanFlushRegion, (unsigned int) paddr, (unsigned)count);
++					cpu_data_ptr->cpu_cache_dispatch(cpu_data_ptr->cpu_id, CacheCleanFlushRegion, (uintptr_t) paddr, (unsigned)count);
+ 				}
+ 			} else {
+ 				pmap_unmap_cpu_windows_copy(index);
+@@ -239,7 +239,7 @@
+ 			CleanPoC_DcacheRegion(vaddr, (unsigned)count);
+ 			if (isphysmem(paddr)) {
+ 				if (cpu_data_ptr->cpu_cache_dispatch != NULL) {
+-					cpu_data_ptr->cpu_cache_dispatch(cpu_data_ptr->cpu_id, CacheCleanRegion, (unsigned int) paddr, (unsigned)count);
++					cpu_data_ptr->cpu_cache_dispatch(cpu_data_ptr->cpu_id, CacheCleanRegion, (uintptr_t) paddr, (unsigned)count);
+ 				}
+ 			} else {
+ 				pmap_unmap_cpu_windows_copy(index);
+@@ -283,7 +283,7 @@
+ 		cpu_data_ptr->cpu_cache_dispatch(cpu_data_ptr->cpu_id, CacheControl, CacheControlEnable, 0x0UL);
+ 
+ 		if (cpuid_cache_info->c_l2size == 0x0) {
+-			cpu_data_ptr->cpu_cache_dispatch(cpu_data_ptr->cpu_id, CacheConfig, CacheConfigSize, (unsigned int)&cache_size);
++			cpu_data_ptr->cpu_cache_dispatch(cpu_data_ptr->cpu_id, CacheConfig, CacheConfigSize, (uintptr_t)&cache_size);
+ 			cpuid_cache_info->c_l2size = cache_size;
+ 		}
+ 	}
+diff --git a/osfmk/arm/model_dep.c b/osfmk/arm/model_dep.c
+--- a/osfmk/arm/model_dep.c
++++ b/osfmk/arm/model_dep.c
+@@ -203,7 +203,7 @@
+ 	addr64_t        lr = 0;
+ 	addr64_t        fp = topfp;
+ 	addr64_t        fp_for_ppn = 0;
+-	ppnum_t         ppn = (ppnum_t)NULL;
++	ppnum_t         ppn = 0;
+ 	vm_offset_t     raddrs[FP_MAX_NUM_TO_EVALUATE] = { 0 };
+ 	bool            dump_kernel_stack = (fp >= VM_MIN_KERNEL_ADDRESS);
+ 
+@@ -227,7 +227,7 @@
+ 			ppn = pmap_find_phys(pmap, fp + FP_LR_OFFSET);
+ 			fp_for_ppn = fp + (is_64_bit ? FP_LR_OFFSET64 : FP_LR_OFFSET);
+ 		}
+-		if (ppn != (ppnum_t)NULL) {
++		if (ppn != 0) {
+ 			if (is_64_bit) {
+ 				lr = ml_phys_read_double_64(((((vm_offset_t)ppn) << PAGE_SHIFT)) | ((fp + FP_LR_OFFSET64) & PAGE_MASK));
+ #if defined(HAS_APPLE_PAC)
+@@ -249,7 +249,7 @@
+ 			ppn = pmap_find_phys(pmap, fp);
+ 			fp_for_ppn = fp;
+ 		}
+-		if (ppn != (ppnum_t)NULL) {
++		if (ppn != 0) {
+ 			if (is_64_bit) {
+ 				fp = ml_phys_read_double_64(((((vm_offset_t)ppn) << PAGE_SHIFT)) | (fp & PAGE_MASK));
+ 			} else {
+diff --git a/bsd/net/pktsched/pktsched_fq_codel.c b/bsd/net/pktsched/pktsched_fq_codel.c
+--- a/bsd/net/pktsched/pktsched_fq_codel.c
++++ b/bsd/net/pktsched/pktsched_fq_codel.c
+@@ -1426,7 +1426,7 @@
+ 		fq_if_purge_sc(fqs, (cqrq_purge_sc_t *)arg);
+ 		break;
+ 	case CLASSQRQ_EVENT:
+-		fq_if_event(fqs, (cqev_t)arg);
++		fq_if_event(fqs, (cqev_t)(uintptr_t)arg);
+ 		break;
+ 	case CLASSQRQ_THROTTLE:
+ 		fq_if_throttle(fqs, (cqrq_throttle_t *)arg);
+diff --git a/bsd/netinet/ip_output.c b/bsd/netinet/ip_output.c
+--- a/bsd/netinet/ip_output.c
++++ b/bsd/netinet/ip_output.c
+@@ -333,15 +333,15 @@
+ #define ipf_pktopts     ipobz.ipf_pktopts
+ 	union {
+ 		struct {
+-			boolean_t select_srcif : 1;     /* set once */
+-			boolean_t srcbound : 1;         /* set once */
+-			boolean_t nocell : 1;           /* set once */
+-			boolean_t isbroadcast : 1;
+-			boolean_t didfilter : 1;
+-			boolean_t noexpensive : 1;      /* set once */
+-			boolean_t noconstrained : 1;      /* set once */
+-			boolean_t awdl_unrestricted : 1;        /* set once */
+-			boolean_t management_allowed : 1;        /* set once */
++			bool select_srcif : 1;     /* set once */
++			bool srcbound : 1;         /* set once */
++			bool nocell : 1;           /* set once */
++			bool isbroadcast : 1;
++			bool didfilter : 1;
++			bool noexpensive : 1;      /* set once */
++			bool noconstrained : 1;      /* set once */
++			bool awdl_unrestricted : 1;        /* set once */
++			bool management_allowed : 1;        /* set once */
+ 		};
+ 		uint32_t raw;
+ 	} ipobf = { .raw = 0 };
+diff --git a/bsd/netinet6/esp_output.c b/bsd/netinet6/esp_output.c
+--- a/bsd/netinet6/esp_output.c
++++ b/bsd/netinet6/esp_output.c
+@@ -420,7 +420,7 @@
+ 						iphlen = inner_ip->ip_hl << 2;
+ #endif
+ 						inner_protocol = inner_ip->ip_p;
+-					} else if (IP_VHL_V(inner_ip->ip_vhl) == IPV6_VERSION) {
++					} else if (IP_VHL_V(inner_ip->ip_vhl) == (IPV6_VERSION >> 4)) {
+ 						struct ip6_hdr *inner_ip6 = mtod(md, struct ip6_hdr *);
+ 						iphlen = sizeof(struct ip6_hdr);
+ 						inner_protocol = inner_ip6->ip6_nxt;
+diff --git a/iokit/Kernel/IONVRAMV3Handler.cpp b/iokit/Kernel/IONVRAMV3Handler.cpp
+--- a/iokit/Kernel/IONVRAMV3Handler.cpp
++++ b/iokit/Kernel/IONVRAMV3Handler.cpp
+@@ -28,7 +28,7 @@
+ 
+ #include <libkern/libkern.h>
+ 
+-#define VARIABLE_STORE_SIGNATURE         'NVV3'
++#define VARIABLE_STORE_SIGNATURE         0x4e565633U /* ASCII NVV3, same wire value */
+ 
+ // Variable Store Version
+ #define VARIABLE_STORE_VERSION           0x1
