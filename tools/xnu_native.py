@@ -253,7 +253,11 @@ def build(work):
     # Python3 alias, without changing the system interpreter or skipping checks.
     bindir = work / "bin"
     bindir.mkdir(exist_ok=True)
-    (bindir / "python").symlink_to("/usr/bin/python3")
+    # /usr/bin/python3 is an Xcode tool-dispatch shim: invoking its symlink as
+    # "python" makes it search for the removed tool with that basename.
+    # Resolve the actual Xcode interpreter before creating the local alias.
+    python3 = output("/usr/bin/xcrun", "--find", "python3")
+    (bindir / "python").symlink_to(python3)
     env["PATH"] = str(bindir) + ":" + env["PATH"]
     report = OUT / "report"
     report.mkdir(parents=True, exist_ok=True)
@@ -376,7 +380,10 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
         raise make_error
     if len(kernels) != 1:
         raise ValueError("expected exactly one upstream linked kernel")
-    result = audit(kernels[0].read_bytes())
+    data = kernels[0].read_bytes()
+    print(json.dumps({"native_link_candidate_sha256": digest(kernels[0]), "bytes": len(data),
+                      "mach_header": list(struct.unpack_from("<8I", data))}), flush=True)
+    result = audit(data, zero_slide_local_relocations=True)
     result.update(kernel_linked=True, arm_init_executed=False, hardware_verified=False,
                   source_commit=specs()[1]["xnu"]["commit"], diagnostic_observer_included=False,
                   upstream_install_succeeded=make_error is None)

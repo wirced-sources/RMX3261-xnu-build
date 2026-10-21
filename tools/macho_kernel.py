@@ -2,7 +2,9 @@
 
 No loading, fixup application, PA allocation or hardware access. A structural
 PASS is not proof that the input is XNU or that its code can run on UMS512.
-Unresolved symbols, dyld dependencies and unprocessed fixups fail closed.
+Unresolved symbols and dyld dependencies fail closed. The default rejects all
+relocations; an explicit preferred-VA-only mode validates static local uint64
+pointer relocation metadata without changing any kernel byte or applying a slide.
 """
 import argparse
 import hashlib
@@ -18,7 +20,7 @@ def bounded(offset, size, limit):
         raise ValueError("range outside file/address space")
 
 
-def audit(data, page=0x4000):
+def audit(data, page=0x4000, *, zero_slide_local_relocations=False):
     if page != 0x4000:
         raise ValueError("only proposed 16K kernel policy is implemented")
     bounded(0, 32, len(data))
@@ -28,7 +30,7 @@ def audit(data, page=0x4000):
     bounded(32, size, len(data))
     end = 32 + size
     at, entry, symtab = 32, None, None
-    segments, section_count = [], 0
+    segments, section_count, local_relocations = [], 0, None
     for _ in range(count):
         bounded(at, 8, end)
         cmd, length = struct.unpack_from("<II", data, at)
@@ -74,8 +76,11 @@ def audit(data, page=0x4000):
             if length != 80:
                 raise ValueError("invalid LC_DYSYMTAB")
             fields = struct.unpack_from("<18I", data, at + 8)
-            if fields[5] or fields[15] or fields[17]:
-                raise ValueError("undefined/dynamic relocations remain")
+            if fields[5] or fields[15] or (fields[17] and not zero_slide_local_relocations):
+                raise ValueError(f"undefined/dynamic relocations remain: undefined={fields[5]}, external={fields[15]}, local={fields[17]}")
+            if local_relocations is not None:
+                raise ValueError("duplicate dynamic symbol table")
+            local_relocations = fields[16:18]
         elif cmd in (0x22, 0x80000022):
             if length != 48 or any(struct.unpack_from("<10I", data, at + 8)):
                 raise ValueError("dyld opcodes must be resolved before acceptance")
@@ -128,8 +133,45 @@ def audit(data, page=0x4000):
             starts.append(value)
     if starts != [entry]:
         raise ValueError("LC_UNIXTHREAD must agree with unique __start symbol")
-    return {"structural_pass": True, "hardware_compatible": "UNPROVEN", "xnu_identity": "UNPROVEN",
+    relocation_count = 0
+    if local_relocations and local_relocations[1]:
+        # Apple loader.h: executable relocation addresses are relative to the
+        # first segment, or first writable segment for MH_SPLIT_SEGS. ld64's
+        # arm64 LocalRelocationsAtom uses the preferred image base address.
+        # These entries describe adjustment IF the image is slid. This path
+        # accepts only already linked 64-bit local pointers at ZERO VA slide.
+        # It never applies a fixup or drops a relocation from the kernel file.
+        off, relocation_count = local_relocations
+        bounded(off, relocation_count * 8, len(data))
+        if not any(s['name'] == '__LINKEDIT' and s['fileoff'] <= off and off + relocation_count*8 <= s['fileoff'] + s['filesize'] for s in segments):
+            raise ValueError('local relocation table must be inside __LINKEDIT')
+        first = (next((s for s in segments if s['initprot'] & 2), None) if flags & 0x20
+                 else next(s for s in segments if s['name'] == '__TEXT' and s['fileoff'] == 0))
+        if first is None:
+            raise ValueError('split-segment relocation image has no writable segment')
+        base = first['vmaddr']
+        seen = set()
+        for i in range(relocation_count):
+            address, info = struct.unpack_from('<iI', data, off+i*8)
+            ordinal = info & 0xffffff
+            if (info >> 24) != 6 or ordinal > section_count:
+                raise ValueError('only local non-PC-relative ARM64_RELOC_UNSIGNED 64-bit pointers are supported at zero slide')
+            site = base + address
+            if site % 8 or site in seen:
+                raise ValueError(f'unaligned or duplicate local relocation site {site:#x}')
+            seen.add(site)
+            owner = next((s for s in segments if s['vmaddr'] <= site and site+8 <= s['vmaddr']+s['filesize']), None)
+            if owner is None:
+                raise ValueError('local relocation site is not file-backed')
+            value = struct.unpack_from('<Q', data, owner['fileoff']+site-owner['vmaddr'])[0]
+            if not any(s['vmsize'] and s['initprot'] and s['vmaddr'] <= value <= s['vmaddr']+s['vmsize'] for s in segments):
+                raise ValueError('local relocation pointer target outside the preferred kernel image')
+    result = {"structural_pass": True, "hardware_compatible": "UNPROVEN", "xnu_identity": "UNPROVEN",
             "sha256": hashlib.sha256(data).hexdigest(), "entry_va": entry, "segments": segments}
+    if relocation_count:
+        result.update(local_relocations_validated=relocation_count, required_image_va_slide=0,
+                      relocation_policy='validated local unsigned64 pointers; preferred VA only; input bytes unchanged')
+    return result
 
 
 def mapping(report, phys_base, virt_base, mem_size, adt_pa, adt_size, args_pa, top):
@@ -158,6 +200,7 @@ def mapping(report, phys_base, virt_base, mem_size, adt_pa, adt_size, args_pa, t
         raise ValueError("handoff overlap or allocation above topOfKernelData")
     entry_pa = phys_base + report["entry_va"] - virt_base
     return {"entry_pa": entry_pa, "deviceTreeP": virt_base + adt_pa - phys_base,
+            "image_va_slide": 0,
             "boot_args_pa": args_pa, "topOfKernelData": top,
             "bootstrap_tables": "UNVERIFIED; run bootstrap_coverage for upstream L2 block rounding",
             "ownership": "UNPROVEN; also run the M0.9 reservation/live-extent validator"}

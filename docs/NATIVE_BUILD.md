@@ -45,7 +45,13 @@ in QEMU before the runner disappears. It never transfers that binary via
 artifacts, caches, Git, releases or encoded logs. The QEMU helper requires
 native source provenance, checks the in-memory arm_init bytes against the
 audited file, and single-steps its real prologue. Reaching later function
-boundaries is reported separately from verified subsystem operation.
+boundaries is reported separately from verified subsystem operation. For the
+original static-PIE kernel's local relocation table, an explicit zero-VA-slide
+path validates every record's kind, width, file-backed site and already linked
+pointer target. External/undefined/PC-relative/unsupported relocations still
+fail. No relocation entry, code byte or protection check is removed. The loader
+maps the kernel at its original virtual addresses; relocating that image to
+different virtual addresses remains unsupported.
 
 The QEMU host is built headlessly from a size/SHA256-pinned official9.2.4
 source archive, with two jobs and a30-minute build bound. This avoids current

@@ -174,7 +174,7 @@ class RSP:
 
 def execute(kernel, record, out, qemu, clang):
     data = kernel.read_bytes()
-    report = audit(data)
+    report = audit(data, zero_slide_local_relocations=True)
     proof = json.loads(record.read_text())
     if (not proof.get('kernel_linked') or proof.get('sha256') != report['sha256']
             or proof.get('source_commit') != '1b191cb58250d0705d8a51287127505aa4bc0789'
@@ -252,11 +252,17 @@ def execute(kernel, record, out, qemu, clang):
             rsp.command('?')
             if rsp.command(f'Z1,{sym["_arm_init"]:x},4') != 'OK':
                 raise RuntimeError('QEMU hardware breakpoint unavailable')
-            rsp.command('c')
+            try:
+                rsp.command('c')
+            except socket.timeout:
+                conn.sendall(b'\x03')
+                rsp.receive()
+                result['stops'].append({'boundary':'timeout before arm_init',**rsp.registers()})
+                raise RuntimeError('bounded run stopped before genuine arm_init; inspect recorded PC/SP/x0')
             before = rsp.registers()
             if int(before['pc'],16) != sym['_arm_init']:
                 raise ValueError('kernel stopped before genuine arm_init')
-            if int(before['x0'],16) != plan['deviceTreeP'] - adt_pa + args_pa or int(before['sp'],16) % 16:
+            if int(before['x0'],16) != va+args_pa-pa or int(before['sp'],16) % 16:
                 raise ValueError('incorrect boot_args KVA or stack alignment at arm_init')
             owner = next(s for s in report['segments'] if s['vmaddr'] <= sym['_arm_init'] < s['vmaddr']+s['filesize'])
             offset = owner['fileoff']+sym['_arm_init']-owner['vmaddr']

@@ -41,10 +41,10 @@ def build():
         run(['brew','install','glib'],'dependency-glib',report,env,work,900)
     obj = work/'build'
     obj.mkdir()
-    run([src/'configure','--target-list=aarch64-softmmu','--without-default-features',
-         '--enable-tcg','--enable-download','--disable-docs','--disable-tools',
+    run([src/'configure','--target-list=aarch64-softmmu','--with-devices-aarch64=minimal','--without-default-features',
+         '--enable-tcg','--enable-fdt','--enable-download','--disable-docs','--disable-tools',
          '--disable-user','--disable-pixman'], 'configure',report,env,obj,300)
-    run(['make','-j2','qemu-system-aarch64'],'qemu-build',report,env,obj,1800)
+    run(['ninja','-j2','qemu-system-aarch64'],'qemu-build',report,env,obj,1800)
     version = subprocess.check_output([obj/'qemu-system-aarch64','--version'],text=True,timeout=15)
     if not version.startswith('QEMU emulator version '+spec['version']):
         raise ValueError('unexpected built QEMU version')

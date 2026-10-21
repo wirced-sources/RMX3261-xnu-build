@@ -31,6 +31,8 @@ jobs:
             QEMU_BIN="$PWD/out/native/qemu-host/build/qemu-system-aarch64"
             "$QEMU_BIN" --version
             python3 tools/xnu_kernel_qemu.py out/native/report/kernel.development.ums512.macho --record out/native/report/kernel-audit.json --out out/native/kernel-qemu --qemu "$QEMU_BIN" --clang "$(xcrun --find clang)"
+          else
+            echo 'QEMU NOT RUN: native kernel has not passed its strict audit'
           fi
       # No artifact/cache upload: their account-wide quota is unknown. Build
       # failures print bounded diagnostics to the ordinary Actions job log.
