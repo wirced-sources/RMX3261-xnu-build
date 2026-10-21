@@ -40,7 +40,20 @@ object list. Missing SDK/private support, compile failures and undefined symbols
 remain failures. A KDK is neither downloaded nor installed. No diagnostic
 `arm_init` observer is included. After make the driver audits the resulting
 Mach-O with the existing strict auditor. A separate, genuine QEMU boot test
-is still required.
+is still required. After a successful final audit, CI runs the same binary
+in QEMU before the runner disappears. It never transfers that binary via
+artifacts, caches, Git, releases or encoded logs. The QEMU helper requires
+native source provenance, checks the in-memory arm_init bytes against the
+audited file, and single-steps its real prologue. Reaching later function
+boundaries is reported separately from verified subsystem operation.
+
+The QEMU host is built headlessly from a size/SHA256-pinned official9.2.4
+source archive, with two jobs and a30-minute build bound. This avoids current
+Homebrew QEMU bottles requiring newer macOS than the Xcode15.4 runner. It uses
+upstream configure/Meson and the runner's GLib/Ninja where available. Guest
+networking is disabled. QEMU's actual FDT supplies its RAM and GIC ranges;
+CNTFRQ is read by the adapter and the guest random seed comes from host OS
+entropy. These facts apply only to QEMU virt, never to the physical RMX3261.
 
 ## Export and CI boundary
 

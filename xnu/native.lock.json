@@ -1,5 +1,12 @@
 {
   "schema": 1,
+  "qemu_test_host": {
+    "version": "9.2.4",
+    "url": "https://download.qemu.org/qemu-9.2.4.tar.xz",
+    "bytes": 134782772,
+    "sha256": "f3cc1c4eabfdb288218ac3e33763dbe9e276d8bc890b867a2335d58de2ddd39a",
+    "purpose": "Headless TCG test host compatible with macOS14/Xcode15; source archive from the official QEMU distribution. No guest network or binary export."
+  },
   "distribution": "macos-135",
   "sources": {
     "AvailabilityVersions": {

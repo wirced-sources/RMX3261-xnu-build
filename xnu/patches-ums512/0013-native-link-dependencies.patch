@@ -1,0 +1,161 @@
+diff --git a/osfmk/arm64/pcb.c b/osfmk/arm64/pcb.c
+--- a/osfmk/arm64/pcb.c
++++ b/osfmk/arm64/pcb.c
+@@ -180,7 +180,9 @@
+ 		panic("machine_switch_context");
+ 	}
+ 
++#if KPC
+ 	kpc_off_cpu(old);
++#endif /* KPC */
+ 
+ 	machine_switch_pmap_and_extended_context(old, new);
+ 
+@@ -516,7 +518,9 @@
+ 	}
+ #endif
+ 
++#if KPC
+ 	kpc_off_cpu(old);
++#endif /* KPC */
+ 
+ 	stack = machine_stack_detach(old);
+ #if CONFIG_STKSZ
+diff --git a/osfmk/kern/sched_prim.c b/osfmk/kern/sched_prim.c
+--- a/osfmk/kern/sched_prim.c
++++ b/osfmk/kern/sched_prim.c
+@@ -3746,6 +3746,7 @@
+ 
+ 		running_timer_setup(processor, RUNNING_TIMER_QUANTUM, self,
+ 		    processor->quantum_end, processor->last_dispatch);
++#if KPERF
+ 		if (was_idle) {
+ 			/*
+ 			 * kperf's running timer is active whenever the idle thread for a
+@@ -3753,6 +3754,7 @@
+ 			 */
+ 			kperf_running_setup(processor, processor->last_dispatch);
+ 		}
++#endif /* KPERF */
+ 		running_timers_activate(processor);
+ 		processor->first_timeslice = TRUE;
+ 	} else {
+diff --git a/bsd/kern/kern_ktrace.c b/bsd/kern/kern_ktrace.c
+--- a/bsd/kern/kern_ktrace.c
++++ b/bsd/kern/kern_ktrace.c
+@@ -208,7 +208,9 @@
+ 	}
+ 
+ 	if (reset_mask & KTRACE_KPERF) {
++#if KPERF
+ 		kperf_reset();
++#endif /* KPERF */
+ 	}
+ 	if (reset_mask & KTRACE_KDEBUG) {
+ 		kdebug_reset();
+@@ -328,6 +330,12 @@
+ {
+ 	ktrace_assert_lock_held();
+ 	assert(config_mask != 0);
++#if !KPERF
++	/* Profiling is unavailable, rather than a successful empty service. */
++	if (config_mask & KTRACE_KPERF) {
++		return ENOTSUP;
++	}
++#endif /* !KPERF */
+ 
+ 	proc_t p = current_proc();
+ 
+@@ -366,7 +374,9 @@
+ {
+ 	if (ktrace_state == state_to_match) {
+ 		kernel_debug_disable();
++#if KPERF
+ 		kperf_disable_sampling();
++#endif /* KPERF */
+ 	}
+ }
+ 
+@@ -391,7 +401,9 @@
+ 
+ 	if (ktrace_state != KTRACE_STATE_OFF) {
+ 		if (ktrace_active_mask & config_mask & KTRACE_KPERF) {
++#if KPERF
+ 			kperf_reset();
++#endif /* KPERF */
+ 		}
+ 		if (ktrace_active_mask & config_mask & KTRACE_KDEBUG) {
+ 			kdebug_reset();
+@@ -503,7 +515,9 @@
+ 		} else {
+ 			if (ktrace_state == KTRACE_STATE_BG) {
+ 				if (ktrace_active_mask & KTRACE_KPERF) {
++#if KPERF
+ 					kperf_reset();
++#endif /* KPERF */
+ 				}
+ 				if (ktrace_active_mask & KTRACE_KDEBUG) {
+ 					kdebug_reset();
+diff --git a/osfmk/arm64/arm_vm_init.c b/osfmk/arm64/arm_vm_init.c
+--- a/osfmk/arm64/arm_vm_init.c
++++ b/osfmk/arm64/arm_vm_init.c
+@@ -2143,7 +2143,10 @@
+ 	arm_vm_physmap_init(args);
+ 	set_mmu_ttb_alternate(cpu_ttep & TTBR_BADDR_MASK);
+ 
++#if !defined(UMS512) || XNU_MONITOR
++	/* UMS512 has NO_MONITOR: there is no Apple PPL to enter. */
+ 	ml_enable_monitor();
++#endif
+ 
+ 	set_mmu_ttb(invalid_ttep & TTBR_BADDR_MASK);
+ 
+diff --git a/osfmk/arm/pmap/pmap_misc.c b/osfmk/arm/pmap/pmap_misc.c
+--- a/osfmk/arm/pmap/pmap_misc.c
++++ b/osfmk/arm/pmap/pmap_misc.c
+@@ -38,6 +38,15 @@
+  */
+ 
+ 
++#if UMS512 && SCHED_HYGIENE_DEBUG && (DEVELOPMENT || DEBUG) && !XNU_MONITOR
++/* Non-monitor preemption uses the real scheduler urgent-AST state. */
++bool
++pmap_pending_preemption(void)
++{
++	return _pmap_pending_preemption_real();
++}
++#endif
++
+ void
+ pmap_abandon_measurement(void)
+ {
+diff --git a/osfmk/arm64/caches_asm.s b/osfmk/arm64/caches_asm.s
+--- a/osfmk/arm64/caches_asm.s
++++ b/osfmk/arm64/caches_asm.s
+@@ -212,6 +212,7 @@
+ 	.globl EXT(CleanPoC_Dcache)
+ 	.globl EXT(clean_mmu_dcache)
+ LEXT(CleanPoC_Dcache)
++LEXT(clean_mmu_dcache)
+ #if  defined(APPLE_ARM64_ARCH_FAMILY)
+ 	dsb		sy
+ 	ret
+@@ -341,6 +342,18 @@
+ #else
+ 	b		EXT(CleanPoC_DcacheRegion_internal)
+ #endif /* APPLE_ARM64_ARCH_FAMILY */
++
++#if defined(UMS512) && !defined(APPLE_ARM64_ARCH_FAMILY)
++/* No Apple HID state exists. Perform the real architectural DC CVAC loop,
++ * including its DSBs; callers of these entries already prevent preemption.
++ */
++	.globl EXT(CleanPoC_DcacheRegion_Force_nopreempt)
++	.globl EXT(CleanPoC_DcacheRegion_Force_nopreempt_nohid)
++LEXT(CleanPoC_DcacheRegion_Force_nopreempt)
++LEXT(CleanPoC_DcacheRegion_Force_nopreempt_nohid)
++	b		EXT(CleanPoC_DcacheRegion_internal)
++#endif
++
+ 
+ /*
+  *	void FlushPoC_Dcache(void)

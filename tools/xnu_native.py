@@ -36,10 +36,11 @@ PATCHES = (
     "xnu/patches-ums512/0010-native-portability.patch",
     "xnu/patches-ums512/0011-native-arm64-integration.patch",
     "xnu/patches-ums512/0012-unused-uart-registration.patch",
+    "xnu/patches-ums512/0013-native-link-dependencies.patch",
     "xnu/patches/0005-non-pac-build-fixes.patch",
 )
 CAPSULE = (
-    "tools/xnu_native.py", "tools/xnu_config.py", "tools/macho_kernel.py", "xnu/native.lock.json",
+    "tools/xnu_native.py", "tools/xnu_config.py", "tools/macho_kernel.py", "tools/xnu_kernel_qemu.py", "tools/fdt.py", "tools/qemu_host.py", "xnu/native.lock.json",
     "xnu/sources.lock.json", "xnu/platform/ums512/UMS512.h",
     "xnu/platform/ums512/cpu_entry.h", "ci/xnu-native.yml",
     "docs/NATIVE_BUILD.md", *PATCHES,
@@ -377,6 +378,7 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
         raise ValueError("expected exactly one upstream linked kernel")
     result = audit(kernels[0].read_bytes())
     result.update(kernel_linked=True, arm_init_executed=False, hardware_verified=False,
+                  source_commit=specs()[1]["xnu"]["commit"], diagnostic_observer_included=False,
                   upstream_install_succeeded=make_error is None)
     (report / "kernel-audit.json").write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result, indent=2), flush=True)
