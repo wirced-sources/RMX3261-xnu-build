@@ -32,7 +32,11 @@ def symbols(data):
             for i in range(count):
                 name, typ, sect, desc, value = struct.unpack_from('<IBBHQ', data, so + 16*i)
                 if typ & 0xe0 == 0 and typ & 0xe == 0xe:
-                    text = data[strings+name:strings+length].split(b'\0', 1)[0].decode('ascii')
+                    start = strings+name
+                    end = data.find(b'\0', start, strings+length)
+                    if name >= length or end < 0:
+                        raise ValueError('invalid kernel symbol string')
+                    text = data[start:end].decode('ascii')
                     result[text] = value
             return result
         at += size
@@ -206,7 +210,7 @@ def execute(kernel, record, out, qemu, clang):
     args_pa = align(adt_pa+len(adt))
     top = args_pa+0x4000
     plan = mapping(report,pa,va,mem,adt_pa,len(adt),args_pa,top)
-    header_pa = pa+min(s['vmaddr'] for s in report['segments'] if s['initprot'])-va
+    header_pa = pa+min(s['vmaddr'] for s in report['segments'] if s['initprot'] and s['vmsize'])-va
     bootstrap_coverage(pa,va,mem,header_pa,[(header_pa,top-header_pa)],(pa,mem))
     raw = bytearray(top-header_pa)
     for s in report['segments']:

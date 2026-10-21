@@ -37,6 +37,7 @@ PATCHES = (
     "xnu/patches-ums512/0011-native-arm64-integration.patch",
     "xnu/patches-ums512/0012-unused-uart-registration.patch",
     "xnu/patches-ums512/0013-native-link-dependencies.patch",
+    "xnu/patches-ums512/0014-isolate-lldb-syntax-checker.patch",
     "xnu/patches/0005-non-pac-build-fixes.patch",
 )
 CAPSULE = (

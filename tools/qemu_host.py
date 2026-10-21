@@ -11,6 +11,15 @@ import urllib.request
 from xnu_native import ROOT, OUT, digest, run
 
 
+def source_filter(member, destination):
+    # The pinned archive contains an optional EDK2 X11 host-header symlink.
+    # We build QEMU, not firmware. Do not create a link into the runner host.
+    if (member.name == 'qemu-9.2.4/roms/edk2/EmulatorPkg/Unix/Host/X11IncludeHack'
+            and member.issym() and member.linkname == '/opt/X11/include'):
+        return None
+    return tarfile.data_filter(member, destination)
+
+
 def build():
     if platform.system() != 'Darwin':
         raise RuntimeError('this QEMU host builder is restricted to the macOS CI job')
@@ -28,7 +37,7 @@ def build():
     if archive.stat().st_size != spec['bytes'] or digest(archive) != spec['sha256']:
         raise ValueError('QEMU source archive integrity mismatch')
     with tarfile.open(archive) as source:
-        source.extractall(work, filter='data')
+        source.extractall(work, filter=source_filter)
     src = work/('qemu-'+spec['version'])
     env = os.environ.copy()
     env['CC'] = subprocess.check_output(['xcrun','--find','clang'],text=True).strip()

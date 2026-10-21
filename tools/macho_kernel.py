@@ -120,9 +120,11 @@ def audit(data, page=0x4000, *, zero_slide_local_relocations=False):
     starts = []
     for i in range(nsyms):
         nameoff, typ, sect, desc, value = struct.unpack_from("<IBBHQ", data, symoff + i * 16)
-        if nameoff >= strsize or b"\0" not in data[stroff + nameoff:stroff + strsize]:
+        name_start = stroff + nameoff
+        name_end = data.find(b"\0", name_start, stroff + strsize) if nameoff < strsize else -1
+        if name_end < 0:
             raise ValueError("invalid symbol string")
-        name = data[stroff + nameoff:stroff + strsize].split(b"\0", 1)[0].decode("ascii")
+        name = data[name_start:name_end].decode("ascii")
         if not typ & 0xe0 and typ & 0xe == 0 and typ & 1:
             raise ValueError("undefined/common symbol: " + name)
         if not typ & 0xe0 and typ & 0xe == 0xe and not 1 <= sect <= section_count:
