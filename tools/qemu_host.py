@@ -26,7 +26,7 @@ def build():
         raise RuntimeError('this QEMU host builder is restricted to the macOS CI job')
     spec = json.loads((ROOT/'xnu/native.lock.json').read_text())['qemu_test_host']
     work = OUT/'qemu-host'
-    work.mkdir(exist_ok=False)
+    work.mkdir(parents=True, exist_ok=False)
     report = work/'report'
     report.mkdir()
     archive = work/'source.tar.xz'

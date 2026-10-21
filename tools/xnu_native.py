@@ -6,6 +6,7 @@ an SDK, runs a diagnostic observer, or substitutes allocator/crypto/CS routines.
 --capsule exports a fixed text-only allowlist, without publishing anything.
 """
 import argparse
+import datetime
 import hashlib
 import json
 import os
@@ -248,6 +249,12 @@ def build(work):
     lock, _ = specs()
     env = os.environ.copy()
     env["DEVELOPER_DIR"] = lock["host"]["developer_dir"]
+    # Upstream newvers.pl explicitly supports reproducible date/object-root
+    # overrides. Use the verified source commit's timestamp, not wall-clock time.
+    epoch = output("git", "-C", source("xnu"), "show", "-s", "--format=%ct", "HEAD")
+    env["SOURCE_DATE_EPOCH"] = epoch
+    env["KERNEL_BUILD_DATE"] = datetime.datetime.fromtimestamp(int(epoch), datetime.timezone.utc).isoformat()
+    env["KERNEL_BUILD_OBJROOT"] = "xnu-8796.141.3/DEVELOPMENT_ARM64_UMS512"
     version = subprocess.check_output(["/usr/bin/xcodebuild", "-version"], env=env, text=True, timeout=30).strip()
     if not version.startswith("Xcode " + lock["host"]["xcode"] + "\n"):
         raise ValueError("requires pinned Xcode 15.4 for the 8796 IORPC ABI: " + version)
