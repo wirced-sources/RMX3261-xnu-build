@@ -21,8 +21,11 @@ checkout under `out/native/work`; choose a fresh `--work out/native/retry` for
 another preparation. Existing workspaces are never reset or deleted.
 
 The native configuration copies upstream `config/MASTER.arm64`, adding only
-`ums512 nos_arm_asm nos_arm_pmap`. All upstream feature groups, including signed
-code, allocator metadata, MACF and integrity policies, are retained. The earlier
+`ums512 nos_arm_asm nos_arm_pmap`. Protection feature groups, allocator metadata,
+MACF and integrity policies are retained. Only KPC/kperf profiling is excluded:
+the required Apple PMU source is absent and no Cortex backend exists. Apple
+AMCC source files are excluded for UMS512 because that controller is absent;
+generic integrity policies remain selected. No fake counter backend is used. The earlier
 restricted component configuration remains available for regression checks.
 Apple-specific hardware features still require porting; preserving a config
 option does not prove its implementation on Cortex.

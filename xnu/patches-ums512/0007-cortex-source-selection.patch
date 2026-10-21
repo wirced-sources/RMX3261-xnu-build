@@ -1,0 +1,34 @@
+diff --git a/osfmk/conf/files.arm64 b/osfmk/conf/files.arm64
+--- a/osfmk/conf/files.arm64
++++ b/osfmk/conf/files.arm64
+@@ -1,3 +1,6 @@
++# Materialize the option as a config device before using "not ums512" below.
++OPTIONS/ums512                   optional ums512
++
+ OPTIONS/fb			optional fb
+ 
+ OPTIONS/debug			optional debug
+@@ -24,8 +24,8 @@
+ osfmk/arm64/WKdmData.s		standard
+ osfmk/arm64/lz4_decode_arm64.s  standard
+ osfmk/arm64/lz4_encode_arm64.s  standard
+-osfmk/arm64/amcc_rorgn_ppl.c optional nos_arm_asm config_pmap_ppl
+-osfmk/arm64/amcc_rorgn_common.c optional nos_arm_asm
++osfmk/arm64/amcc_rorgn_ppl.c optional nos_arm_asm config_pmap_ppl not ums512
++osfmk/arm64/amcc_rorgn_common.c optional nos_arm_asm not ums512
+ osfmk/arm64/bcopy.s standard
+ osfmk/arm64/bzero.s standard
+ osfmk/arm/caches.c		standard
+diff --git a/osfmk/kern/task.c b/osfmk/kern/task.c
+--- a/osfmk/kern/task.c
++++ b/osfmk/kern/task.c
+@@ -1510,7 +1510,9 @@
+ 
+ 	new_task->affinity_space = NULL;
+ 
++#if KPC
+ 	new_task->t_kpc = 0;
++#endif
+ 
+ 	new_task->pidsuspended = FALSE;
+ 	new_task->frozen = FALSE;

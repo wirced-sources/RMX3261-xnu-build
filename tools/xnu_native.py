@@ -30,6 +30,7 @@ PATCHES = (
     "xnu/patches-ums512/0004-cortex-cold-entry.patch",
     "xnu/patches-ums512/0005-exclude-apple-iommu.patch",
     "xnu/patches-ums512/0006-pmap-build-context.patch",
+    "xnu/patches-ums512/0007-cortex-source-selection.patch",
     "xnu/patches/0005-non-pac-build-fixes.patch",
 )
 CAPSULE = (
@@ -93,11 +94,20 @@ def fetch():
 
 
 def full_master(text):
-    """Keep every upstream ARM64 feature; add only machine/source selection."""
+    """Preserve protection features; exclude unsupported Apple PMU profiling."""
     pattern = r"^(#\s+KERNEL_BASE\s*=\s*\[)([^\]]+)(\])"
     text, count = re.subn(pattern, r"\1\2 ums512 nos_arm_asm nos_arm_pmap \3", text, flags=re.M)
     if count != 1:
         raise ValueError("upstream MASTER group changed")
+    pattern = r"^(#\s+PERF_DBG_BASE\s*=\s*\[)([^\]]+)(\])"
+    def without_apple_pmu(match):
+        words = match[2].split()
+        if words.count("kpc") != 1 or words.count("kperf") != 1:
+            raise ValueError("upstream PMU feature group changed")
+        return match[1] + " " + " ".join(w for w in words if w not in ("kpc", "kperf")) + " " + match[3]
+    text, count = re.subn(pattern, without_apple_pmu, text, flags=re.M)
+    if count != 1:
+        raise ValueError("upstream PMU group missing")
     return text + "\noptions UMS512 # <ums512>\n"
 
 
@@ -106,6 +116,8 @@ def clone_work(name, work):
     if dest.exists():
         raise ValueError("refusing to overwrite build sources; choose a fresh --work: " + str(dest))
     output("git", "-c", "core.autocrlf=false", "clone", "--shared", "--no-checkout", source(name), dest)
+    output("git", "-C", dest, "config", "core.autocrlf", "false")
+    output("git", "-C", dest, "config", "core.eol", "lf")
     output("git", "-C", dest, "-c", "core.autocrlf=false", "checkout", "--detach", specs()[1][name]["commit"])
     verify_source(dest, specs()[1][name])
     return dest
@@ -127,14 +139,16 @@ def prepare(work):
     board = full_master(original)
     _, before = configure(master, original)
     _, after = configure(master, board)
-    if set(after) - set(before) != {"ums512", "nos_arm_asm", "nos_arm_pmap"} or set(before) - set(after):
+    if (set(after) - set(before) != {"ums512", "nos_arm_asm", "nos_arm_pmap"}
+            or set(before) - set(after) != {"kpc", "kperf"}):
         raise ValueError("native board unexpectedly changed upstream features")
     (src / "config/MASTER.arm64.ums512").write_text(board, encoding="utf-8", newline="\n")
-    result = {"source_commit": specs()[1]["xnu"]["commit"], "upstream_features_preserved": True,
+    result = {"source_commit": specs()[1]["xnu"]["commit"], "security_features_preserved": True,
+              "excluded_unsupported_apple_pmu": ["kpc", "kperf"],
               "features": after, "patches": {p: digest(ROOT / p) for p in PATCHES},
               "diagnostic_observer_included": False, "kernel_linked": False, "arm_init_executed": False}
     (work / "prepared.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
-    print("PREPARED: complete upstream ARM64 configuration; all features preserved", flush=True)
+    print("PREPARED: full ARM64 configuration; protection features preserved; unsupported KPC/kperf excluded", flush=True)
     return src
 
 
@@ -263,7 +277,23 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
     xbuild("libdispatch", "install", ["-target", "libfirehose_kernel", "FAKEROOT_DIR=" + str(fake)])
     (fake / "usr/local/lib/kernel/liblibfirehose_kernel.a").rename(fake / "usr/local/lib/kernel/libfirehose_kernel.a")
     # Keep-going collects real errors across components; failures stay failures.
-    run(["make", "install", "-k", "-j2", *native], "xnu-kernel", report, env, src, 2700)
+    try:
+        run(["make", "install", "-k", "-j2", *native], "xnu-kernel", report, env, src, 2700)
+    finally:
+        objects = {}
+        target = work / "xnu.obj/DEVELOPMENT_ARM64_UMS512"
+        for path in target.rglob("*.o"):
+            with path.open("rb") as stream:
+                header = stream.read(16)
+            if len(header) == 16 and struct.unpack("<4I", header) == (0xfeedfacf, 0x100000c, 0, 1):
+                objects[path.relative_to(target).as_posix()] = digest(path)
+        core = {n: h for n, h in objects.items() if Path(n).stem in (
+            "arm_init", "arm_vm_init", "pmap", "vm_map", "vm_fault", "vm_page", "kalloc", "zalloc",
+            "ipc_kmsg", "mach_msg", "device_tree", "OSObject", "IOService")}
+        inventory = {"plain_arm64_macho_objects": len(objects), "core_objects": core,
+                     "kernel_linked": False, "arm_init_executed": False}
+        (report / "object-inventory.json").write_text(json.dumps(inventory, indent=2) + "\n")
+        print(json.dumps(inventory, indent=2), flush=True)
     from macho_kernel import audit
     kernels = list((work / "xnu.obj").rglob("kernel.development.ums512.unstripped"))
     if len(kernels) != 1:
