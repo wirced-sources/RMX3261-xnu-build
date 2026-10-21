@@ -384,7 +384,8 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
             "arm_init", "arm_vm_init", "pmap", "vm_map", "vm_fault", "vm_page", "kalloc", "zalloc",
             "ipc_kmsg", "mach_msg", "device_tree", "OSObject", "IOService")}
         inventory = {"object_formats": formats, "core_objects": core,
-                     "kernel_linked": False, "arm_init_executed": False}
+                     "scope": "compiled object inventory; final link status is recorded by the subsequent Mach-O audit",
+                     "arm_init_executed": False}
         (report / "object-inventory.json").write_text(json.dumps(inventory, indent=2) + "\n")
         print(json.dumps(inventory, indent=2), flush=True)
     from macho_kernel import audit
