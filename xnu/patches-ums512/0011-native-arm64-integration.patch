@@ -1,0 +1,133 @@
+diff --git a/osfmk/kern/ast.c b/osfmk/kern/ast.c
+--- a/osfmk/kern/ast.c
++++ b/osfmk/kern/ast.c
+@@ -254,10 +254,12 @@
+ 		ledger_ast(thread);
+ 	}
+ 
++#if KPERF && KPC
+ 	if (reasons & AST_KPERF) {
+ 		thread_ast_clear(thread, AST_KPERF);
+ 		kperf_kpc_thread_ast(thread);
+ 	}
++#endif /* KPERF && KPC */
+ 
+ 	if (reasons & AST_RESET_PCS) {
+ 		thread_ast_clear(thread, AST_RESET_PCS);
+diff --git a/bsd/kern/kern_mib.c b/bsd/kern/kern_mib.c
+--- a/bsd/kern/kern_mib.c
++++ b/bsd/kern/kern_mib.c
+@@ -296,7 +296,7 @@
+ 	 * If we are using one of the perflevel sysctls, return early if the perflevel
+ 	 * does not exist in this system.
+ 	 */
+-	int perflevel = (int)arg1;
++	int perflevel = (int)(uintptr_t)arg1;
+ 	int n_perflevels = __builtin_popcount(ml_get_cpu_types());
+ 
+ 	if (arg2 & CTLHW_PERFLEVEL) {
+diff --git a/osfmk/kern/thread_call.c b/osfmk/kern/thread_call.c
+--- a/osfmk/kern/thread_call.c
++++ b/osfmk/kern/thread_call.c
+@@ -1987,7 +1987,7 @@
+ thread_call_delayed_timer(timer_call_param_t p0, timer_call_param_t p1)
+ {
+ 	thread_call_group_t  group  = (thread_call_group_t)  p0;
+-	thread_call_flavor_t flavor = (thread_call_flavor_t) p1;
++	thread_call_flavor_t flavor = (thread_call_flavor_t)(uintptr_t) p1;
+ 
+ 	assert((group - &thread_call_groups[0]) < THREAD_CALL_INDEX_MAX);
+ 	assert((group - &thread_call_groups[0]) > THREAD_CALL_INDEX_INVALID);
+diff --git a/bsd/dev/arm/unix_signal.c b/bsd/dev/arm/unix_signal.c
+--- a/bsd/dev/arm/unix_signal.c
++++ b/bsd/dev/arm/unix_signal.c
+@@ -415,7 +415,7 @@
+ #endif
+ 	} else {
+ 		sendsig_fill_uctx32(&user_frame.uf32.uctx, oonstack, mask, sp, (user32_size_t)stack_size,
+-		    (user32_addr_t)&((struct user_sigframe32*)sp)->mctx);
++		    CAST_DOWN_EXPLICIT(user32_addr_t, &((struct user_sigframe32*)sp)->mctx));
+ 	}
+ 
+ 	/*
+@@ -640,7 +640,7 @@
+ 		}
+ 
+ 		if (sendsig_set_thread_state32(&ts.ts32.ss,
+-		    CAST_DOWN_EXPLICIT(user32_addr_t, catcher), infostyle, sig, (user32_addr_t)&((struct user_sigframe32*)sp)->sinfo,
++		    CAST_DOWN_EXPLICIT(user32_addr_t, catcher), infostyle, sig, CAST_DOWN_EXPLICIT(user32_addr_t, &((struct user_sigframe32*)sp)->sinfo),
+ 		    CAST_DOWN_EXPLICIT(user32_addr_t, trampact), CAST_DOWN_EXPLICIT(user32_addr_t, sp), th_act) != KERN_SUCCESS) {
+ 			goto bad;
+ 		}
+diff --git a/bsd/dev/dtrace/systrace.c b/bsd/dev/dtrace/systrace.c
+--- a/bsd/dev/dtrace/systrace.c
++++ b/bsd/dev/dtrace/systrace.c
+@@ -1005,7 +1005,7 @@
+     dtrace_argdesc_t *desc)
+ {
+ #pragma unused(arg, id)
+-	int sysnum = SYSTRACE_SYSNUM(parg);
++	int sysnum = SYSTRACE_SYSNUM((uintptr_t)parg);
+ 	uthread_t uthread = current_uthread();
+ 	uint64_t *uargs = NULL;
+ 
+diff --git a/osfmk/kern/task.c b/osfmk/kern/task.c
+--- a/osfmk/kern/task.c
++++ b/osfmk/kern/task.c
+@@ -7692,7 +7692,7 @@
+ task_io_rate_exceeded(int warning, const void *param0, __unused const void *param1)
+ {
+ 	if (warning == 0) {
+-		SENDING_NOTIFICATION__THIS_PROCESS_IS_CAUSING_TOO_MUCH_IO((int)param0);
++		SENDING_NOTIFICATION__THIS_PROCESS_IS_CAUSING_TOO_MUCH_IO((int)(uintptr_t)param0);
+ 	}
+ }
+ 
+diff --git a/osfmk/tests/test_thread_call.c b/osfmk/tests/test_thread_call.c
+--- a/osfmk/tests/test_thread_call.c
++++ b/osfmk/tests/test_thread_call.c
+@@ -54,8 +54,8 @@
+ test_once_callback(thread_call_param_t param0,
+     thread_call_param_t param1)
+ {
+-	T_ASSERT_EQ_INT((test_param)param0, TEST_ARG1, "param0 is correct");
+-	T_ASSERT_EQ_INT((test_param)param1, TEST_ARG2, "param1 is correct");
++	T_ASSERT_EQ_INT((test_param)(uintptr_t)param0, TEST_ARG1, "param0 is correct");
++	T_ASSERT_EQ_INT((test_param)(uintptr_t)param1, TEST_ARG2, "param1 is correct");
+ 
+ 	once_callback_counter++;
+ 
+diff --git a/pexpert/arm/pe_init.c b/pexpert/arm/pe_init.c
+--- a/pexpert/arm/pe_init.c
++++ b/pexpert/arm/pe_init.c
+@@ -158,13 +158,13 @@
+ 	panic_info = (struct embedded_panic_header *)gPanicBase;
+ 
+ 	/* Check if a shared memory console is running in the panic buffer */
+-	if (panic_info->eph_magic == 'SHMC') {
++	if (panic_info->eph_magic == 0x53484d43U /* ASCII SHMC */) {
+ 		panic_console_available = TRUE;
+ 		return;
+ 	}
+ 
+ 	/* Check if there's a boot profile in the panic buffer */
+-	if (panic_info->eph_magic == 'BTRC') {
++	if (panic_info->eph_magic == 0x42545243U /* ASCII BTRC */) {
+ 		return;
+ 	}
+ 
+diff --git a/pexpert/arm/pe_serial.c b/pexpert/arm/pe_serial.c
+--- a/pexpert/arm/pe_serial.c
++++ b/pexpert/arm/pe_serial.c
+@@ -742,9 +742,9 @@
+ serial_init(void)
+ {
+ 	DTEntry         entryP __unused = NULL;
+-	uint32_t        prop_size;
++	uint32_t        prop_size __unused;
+ 	vm_offset_t     soc_base;
+-	uintptr_t const *reg_prop;
++	uintptr_t const *reg_prop __unused;
+ 	uint32_t const  *prop_value __unused = NULL;
+ 
+ 	struct pe_serial_functions *fns = gPESF;

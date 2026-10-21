@@ -34,6 +34,7 @@ PATCHES = (
     "xnu/patches-ums512/0008-vnode-argument-offset.patch",
     "xnu/patches-ums512/0009-portable-lp64-build-fixes.patch",
     "xnu/patches-ums512/0010-native-portability.patch",
+    "xnu/patches-ums512/0011-native-arm64-integration.patch",
     "xnu/patches/0005-non-pac-build-fixes.patch",
 )
 CAPSULE = (
@@ -199,6 +200,7 @@ def run(args, name, report, env, cwd, timeout=1800):
         # failure. Export bounded ERROR CONTEXT, not just that unrelated tail.
         indices = set()
         families = {}
+        sites = {}
         for i, line in enumerate(lines):
             # Downstream make failures are not separate compiler root causes.
             if re.search(r"make(?:\[[0-9]+\])?: \*\*\*.*Error [0-9]+", line):
@@ -208,11 +210,18 @@ def run(args, name, report, env, cwd, timeout=1800):
                 key = warning[0] if warning else re.sub(r"'[^']*'|`[^']*'|\b[0-9]+\b", "<value>", line.split("error:")[-1])
                 count, sample = families.get(key, (0, line))
                 families[key] = (count + 1, sample)
+                sites.setdefault(line, None)
                 if count < 3:
                     indices.update(range(max(0, i - 2), min(len(lines), i + 7)))
         print("DIAGNOSTIC FAMILIES: " + str(len(families)) + " (at most120 shown)", flush=True)
         for count, sample in list(families.values())[:120]:
             print(str(count) + " occurrences: " + sample[:1000], flush=True)
+        # A family can occur in many independent files (e.g. LP64 casts).
+        # Include their actual locations so later failures are not concealed
+        # by the three-contexts-per-warning budget.
+        print("DIAGNOSTIC SITES: " + str(len(sites)) + " (at most250 shown)", flush=True)
+        for site in list(sites)[:250]:
+            print(site[:1200], flush=True)
         selected = sorted(indices)[:700]
         if not selected:
             selected = list(range(max(0, len(lines) - 35), len(lines)))
@@ -301,6 +310,9 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
               # Keep future-proof ICMP size guards and their diagnostics. The
               # current fixed protocol header is smaller than either mbuf bound.
               "icmp6.o_CWARNFLAGS_ADD=-Wno-address-of-packed-member -Wno-error=tautological-value-range-compare",
+              # PF_KEY keeps its allocation/encoded-length assertions even
+              # where the current constant key-size limits prove them true.
+              "key.o_CWARNFLAGS_ADD=-Wno-error=tautological-value-range-compare",
               # In 8796, BUILD_JSON_COMPILATION_DATABASE=1 REPLACES compiling
               # with command generation. It must not be set for a real build.
               "CONCISE=0", "VERBOSE=NO"]

@@ -15,3 +15,23 @@
 #define MAX_CPUS 1 /* Bring-up limit, not observed SoC topology (6 A55 + 2 A75). */
 #define MAX_CPU_CLUSTERS 1
 /* CPU_HAS_APPLE_PAC, Apple sysregs, ARM AMP and SMP are intentionally not enabled. */
+
+/* Architectural GICv3 register encodings, matching Arm IHI0069 and upstream
+ * pexpert/arm64/VMAPPLE.h. These are offsets, not UMS512 MMIO bases. They allow
+ * the original PE source to compile. Its Group0/FIQ policy is NOT a working
+ * UMS512 Group1NS backend and remains a runtime integration blocker.
+ */
+#define GIC_SPURIOUS_IRQ 1023
+#define GICR_PE_SIZE 0x20000
+#define GICD_CTLR 0x0
+#define GICD_CTLR_ENABLEGRP0 0x1
+#define GICR_TYPER 0x08
+#define GICR_WAKER 0x14
+#define GICR_IGROUPR0 0x10080
+#define GICR_ISENABLER0 0x10100
+#define GICR_TYPER_AFFINITY_VALUE_SHIFT 32
+#define GICR_TYPER_LAST 0x10
+#define GICR_WAKER_PROCESSORSLEEP 0x2
+#define GICR_WAKER_CHILDRENASLEEP 0x4
+#define ICC_CTLR_EOIMODE 0x1
+#define ICC_SRE_SRE 0x1
