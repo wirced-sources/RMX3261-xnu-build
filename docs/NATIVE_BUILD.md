@@ -144,7 +144,7 @@ corrected separately. No page-table walk result is inferred from the failure.
 
 The new platform adapter uses the SHA256 HMAC_DRBG implementation from the
 [official BearSSL0.6 release](https://www.bearssl.org/), pinned by size/SHA256 in
-native.lock.json. Only the selected RNG/hash/HMAC C files are copied into an
+native.lock.json. Initially selected RNG/hash/HMAC C files are copied into an
 isolated build tree, retaining the MIT notices. No Apple corecrypto implementation
 is redistributed. Its original interfaces and registration order were examined.
 
@@ -161,10 +161,14 @@ the2^48 request limit is enforced, including after untrusted reseed input.
 The adapter also supplies actual MD5/SHA1/SHA256/SHA384/SHA512 and HMAC functions
 with the original context ABI, constant-time tag comparison, and non-destructive
 digest finalization. Legacy hash algorithms remain for existing ABI consumers;
-the DRBG always uses SHA256. Cipher, AEAD and RSA capabilities remain absent;
+the DRBG always uses SHA256. In this historical initial provider, cipher, AEAD and RSA capabilities remain absent;
 they are not replaced with success stubs. This is a capability subset, not a
 complete corecrypto replacement or FIPS-validated module. It currently supports
 only the explicit MAX_CPUS=1 profile and refuses an accidental SMP build.
+
+Current capability additions and exact validation are tracked in
+[AES_CBC.md](AES_CBC.md): real ct64 CBC and typed hash-vtable ABI thunks;
+native execution is recorded separately from host KATs.
 
 The native build executes tests/crypto_rng_kat.c using the actual portable adapter
 before compiling XNU. The kernel startup itself additionally checks all five
@@ -403,3 +407,28 @@ builds passed. Timer IRQ counts were9/9/10/8 (asynchronous timing varies), with
 three requested callbacks, one self-SGI and four semaphore exchanges each.
 Native30 also verified the actual QEMU FDT timer binding before loading the
 kernel. All new runtime evidence is separate from historical cold diagnostics.
+
+
+## 2026-10-22 — genuine libpthread initializer returned; TCP crypto dependency
+
+- Native42/run39831699626/job120009220749 completed SUCCESS, all actual job steps
+  succeeded. Original make install + strict Mach-O audit: 19892200 bytes,18segments,
+ 72907 validated local relocations,0imports,
+  SHA256177fd8463a2228bcc13487d7983fab41390a9324676d8aa8fae0eec9cc6be6e7. Genuine arm_init0xfffffe0007bc3328 executed in both boots.
+- Both passed original trust_cache_runtime_init,42/30/25/7 security checks, live
+  RO/NX security pointers/tables and targeted VM/IPC/IRQ/timer/thread/platform/
+  RTC/UP enumeration checks. Native36 proofs archived under docs/history/native36.
+- Trial1 stopped at unchanged interrupt-mask timing watchdog after audit_init;
+  exact timing variadic args not yet decoded. Trial2 returned real registration,
+  actual Apple _pthread_init and dlil_init, entered domaininit, then data abort
+  tcp_init+0x158 PC0xfffffe0007733c6c/LR0xfffffe0007733c60/SP0xfffffe787569f7c0,
+  ESR0x96000005/FAR0. Audited instruction0xf9400008 = LDR X8,[X0], X0=0;
+  effective address matches FAR and VA0 has no valid mapping.
+- Pinned source chain is tcp_tfo_init -> aes_encrypt_key128 -> aes_encrypt_key,
+  which loads g_crypto_funcs->ccaes_cbc_encrypt->size. Provider is registered
+  (_crypto_init1; g_crypto_funcs0xfffffe000723b830), pointer mapped RO/NX; CBC
+  field currently NULL. Required cipher is CBC, not an ECB descriptor. No cipher
+  fallback/stub, TFO disable or security-check bypass was introduced.
+- Real libpthread locks/hash/thread-call initializer returned in one trial;
+  this does not establish working userspace psynch/syscalls or complete BSD.
+  No root mount/network traffic/SMP/iOS/physical UMS512 verification. Phone untouched.

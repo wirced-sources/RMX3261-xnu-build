@@ -1,7 +1,11 @@
 #include "ums512_rng.h"
+#include "ums512_aes.h"
 #include <stdio.h>
 #include <string.h>
 int main(void) {
+    int aes=ums512_aes_selftest();
+    if (aes) { fprintf(stderr,"AES CBC KAT/contract failure %d\n",aes); return 10+aes; }
+    printf("PASS: AES128/192/256 CBC/zero-IV KAT, streaming/in-place/IV update, invalid-contract rejection\n");
     struct ums512_rng r={0}; unsigned char seed[48]={1}, out[16]; uint64_t value;
     if (ums512_rng_selftest()) return 1;
     if (!ums512_rng_generate(&r,out,sizeof(out))) return 2;

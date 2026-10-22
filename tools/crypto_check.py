@@ -7,10 +7,10 @@ import subprocess
 import sys
 from xnu_crypto import ROOT, SOURCES
 
-def check(source, compiler=None):
+def check(source, compiler=None, sanitize=False):
     source = Path(source).resolve()
-    binary = ROOT/'out/native/crypto-rng-kat'
-    paths = [ROOT/'tests/crypto_rng_kat.c',source/'ums512_rng.c',
+    binary = ROOT/('out/native/crypto-rng-kat-sanitized' if sanitize else 'out/native/crypto-rng-kat')
+    paths = [ROOT/'tests/crypto_rng_kat.c',source/'ums512_rng.c',source/'ums512_aes.c',
              *[source/('br_'+Path(n).name) for n in SOURCES]]
     def path(value):
         text = str(value)
@@ -21,6 +21,8 @@ def check(source, compiler=None):
               else [compiler or 'clang'])
     command = [*prefix,'-std=c11','-O2','-Wall','-Wextra','-Werror','-I'+path(source),
                *map(path,paths),'-o',path(binary)]
+    if sanitize:
+        command[len(prefix):len(prefix)]=['-fsanitize=address,undefined','-fno-sanitize-recover=all','-fno-omit-frame-pointer']
     if platform.system() == 'Darwin':
         sdk = subprocess.check_output(['xcrun','--sdk','macosx','--show-sdk-path'],text=True,timeout=30).strip()
         command[1:1] = ['-isysroot',sdk]
@@ -32,5 +34,6 @@ if __name__ == '__main__':
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('source',type=Path)
     p.add_argument('--compiler')
+    p.add_argument('--sanitize',action='store_true')
     a=p.parse_args()
-    check(a.source,a.compiler)
+    check(a.source,a.compiler,a.sanitize)

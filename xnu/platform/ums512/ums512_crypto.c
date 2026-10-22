@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MIT. XNU8796 adapter for a real portable crypto backend.
- * RNG, digest and HMAC capabilities only. Cipher/AEAD/RSA are NOT supplied.
+ * RNG, digest, HMAC and AES-CBC capabilities. AEAD/corecrypto RSA not supplied.
  * No success stubs or signature-policy changes. Bootstrap CPU only (MAX_CPUS=1).
  */
 #include <libkern/libkern.h>
@@ -13,6 +13,8 @@
 #include <corecrypto/cckprng.h>
 #include <sys/random.h>
 #include "ums512_rng.h"
+#include "ums512_aes.h"
+#include <libkern/crypto/aes.h>
 
 _Static_assert(MAX_CPUS == 1, "PRNG CPU integration requires explicit SMP support");
 _Static_assert(sizeof(struct ums512_rng) <= CRYPTO_RANDOM_MAX_CTX_SIZE, "KMEM context too large");
@@ -252,6 +254,50 @@ static const struct cckprng_funcs prng_callbacks = {
     .refresh=prng_refresh,.generate=prng_generate,.init_with_getentropy=prng_init
 };
 
+_Static_assert(sizeof(struct ums512_aes) <= sizeof(aes_encrypt_ctx), "AES encrypt context exceeds native fixed storage");
+_Static_assert(sizeof(struct ums512_aes) <= sizeof(aes_decrypt_ctx), "AES decrypt context exceeds native fixed storage");
+_Static_assert(_Alignof(struct ums512_aes) <= _Alignof(cccbc_ctx), "AES context alignment mismatch");
+_Static_assert(offsetof(struct crypto_functions,ccaes_cbc_encrypt) == 15*sizeof(void *), "CBC tracing ABI changed");
+static int aes_cbc_encrypt_init(const struct ccmode_cbc *mode, cccbc_ctx *ctx, size_t n, const void *key)
+{
+    (void)mode;
+    return ums512_aes_init((struct ums512_aes *)(void *)ctx,key,n,0);
+}
+static int aes_cbc_decrypt_init(const struct ccmode_cbc *mode, cccbc_ctx *ctx, size_t n, const void *key)
+{
+    (void)mode;
+    return ums512_aes_init((struct ums512_aes *)(void *)ctx,key,n,1);
+}
+static int aes_cbc_encrypt(const cccbc_ctx *ctx, cccbc_iv *iv, size_t n, const void *in, void *out)
+{
+    return ums512_aes_cbc((const struct ums512_aes *)(const void *)ctx,iv,n,in,out,0);
+}
+static int aes_cbc_decrypt(const cccbc_ctx *ctx, cccbc_iv *iv, size_t n, const void *in, void *out)
+{
+    return ums512_aes_cbc((const struct ums512_aes *)(const void *)ctx,iv,n,in,out,1);
+}
+static const struct ccmode_cbc aes_cbc_encrypt_mode={
+    .size=sizeof(struct ums512_aes),.block_size=16,.init=aes_cbc_encrypt_init,.cbc=aes_cbc_encrypt
+};
+static const struct ccmode_cbc aes_cbc_decrypt_mode={
+    .size=sizeof(struct ums512_aes),.block_size=16,.init=aes_cbc_decrypt_init,.cbc=aes_cbc_decrypt
+};
+
+static void aes_native_wrapper_selftest(void)
+{
+    unsigned char key[16],plain[16],out[16],again[16];
+    static const unsigned char want[16]={0x69,0xc4,0xe0,0xd8,0x6a,0x7b,0x04,0x30,0xd8,0xcd,0xb7,0x80,0x70,0xb4,0xc5,0x5a};
+    aes_encrypt_ctx enc;
+    aes_decrypt_ctx dec;
+    for (unsigned i=0;i<16;i++) { key[i]=(unsigned char)i;plain[i]=(unsigned char)(17*i); }
+    if (aes_encrypt_key128(key,&enc) || aes_encrypt(plain,out,&enc) || memcmp(out,want,16) ||
+        aes_decrypt_key128(key,&dec) || aes_decrypt(out,again,&dec) || memcmp(again,plain,16)) {
+        panic("UMS512 native AES wrapper KAT failure");
+    }
+    ums512_crypto_clear(&enc,sizeof(enc));ums512_crypto_clear(&dec,sizeof(dec));
+    ums512_crypto_clear(key,sizeof(key));ums512_crypto_clear(out,sizeof(out));ums512_crypto_clear(again,sizeof(again));
+}
+
 static void crypto_selftest(void)
 {
     static const char *expected[] = {
@@ -298,6 +344,7 @@ SECURITY_READ_ONLY_LATE(struct crypto_functions) ums512_crypto_callbacks = {
     .ccdigest_final_fn=digest_final,.ccdigest_fn=digest_once,
     .ccmd5_di=&md5_di,.ccsha1_di=&sha1_di,.ccsha256_di=&sha256_di,
     .ccsha384_di=&sha384_di,.ccsha512_di=&sha512_di,
+    .ccaes_cbc_encrypt=&aes_cbc_encrypt_mode,.ccaes_cbc_decrypt=&aes_cbc_decrypt_mode,
     .cchmac_init_fn=cchmac_init,.cchmac_update_fn=cchmac_update,
     .cchmac_final_fn=cchmac_final,.cchmac_fn=cchmac,
     .ccrng_fn=root_context,.random_generate_fn=random_generate,
@@ -313,6 +360,7 @@ SECURITY_READ_ONLY_LATE(struct crypto_functions) ums512_crypto_callbacks = {
 static void ums512_crypto_startup(void)
 {
     require_ok(ums512_rng_selftest());
+    require_ok(ums512_aes_selftest());
     br_md5_context m; br_md5_init(&m); memcpy(md5_iv,m.val,sizeof(md5_iv));
     br_sha1_context s1; br_sha1_init(&s1); memcpy(sha1_iv,s1.val,sizeof(sha1_iv));
     br_sha256_context s2; br_sha256_init(&s2); memcpy(sha256_iv,s2.val,sizeof(sha256_iv));
@@ -321,5 +369,6 @@ static void ums512_crypto_startup(void)
     crypto_selftest();
     register_and_init_prng(&prng_handle,&prng_callbacks);
     if (register_crypto_functions(&ums512_crypto_callbacks)) { panic("UMS512 duplicate crypto provider registration"); }
+    aes_native_wrapper_selftest();
 }
 STARTUP(EARLY_BOOT, STARTUP_RANK_FIRST, ums512_crypto_startup);

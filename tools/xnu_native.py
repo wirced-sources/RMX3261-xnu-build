@@ -62,6 +62,7 @@ CAPSULE = (
     "xnu/platform/ums512/QemuVirtPlatform.cpp",
     "tools/xnu_pthread.py", "xnu/platform/ums512/ums512_pthread.c",
     "tools/crypto_check.py", "tests/crypto_rng_kat.c",
+    "xnu/platform/ums512/ums512_aes.h", "xnu/platform/ums512/ums512_aes.c",
     "tools/xnu_crypto.py", "xnu/platform/ums512/ums512_rng.h",
     "xnu/platform/ums512/ums512_rng.c", "xnu/platform/ums512/ums512_crypto.c",
     "xnu/platform/ums512/ums512_runtime.c",

@@ -1,6 +1,7 @@
 """Pinned MIT-licensed portable crypto dependency, never Apple corecrypto export."""
 import hashlib
 import json
+import re
 from pathlib import Path
 import shutil
 import tarfile
@@ -14,7 +15,34 @@ SOURCES = ('rand/hmac_drbg.c','mac/hmac.c','hash/md5.c','hash/sha1.c',
            'int/i31_decode.c','int/i31_decmod.c','int/i31_encode.c','int/i31_ninv31.c',
            'int/i31_modpow2.c','int/i31_montmul.c','int/i31_muladd.c','int/i31_tmont.c',
            'int/i31_fmont.c','int/i31_sub.c','int/i31_add.c','int/i31_bitlen.c',
-           'int/i32_div32.c','codec/ccopy.c')
+           'int/i32_div32.c','codec/ccopy.c',
+           'symcipher/aes_ct64.c','symcipher/aes_ct64_enc.c',
+           'symcipher/aes_ct64_dec.c','symcipher/aes_ct64_cbcenc.c',
+           'symcipher/aes_ct64_cbcdec.c')
+
+def typed_vtables(dest):
+    # BearSSL0.6 casts concrete functions to generic OO vtable signatures.
+    # Typed thunks preserve dispatch/algorithms without undefined indirect
+    # function calls (Clang UBSan function reports). Keep that check enabled.
+    for name,algs in [('br_md5.c',('md5',)),('br_sha1.c',('sha1',)),
+                      ('br_sha2small.c',('sha224','sha256')),('br_sha2big.c',('sha384','sha512'))]:
+        path=dest/name;text=path.read_text()
+        for alg in algs:
+            base='br_'+alg;typ=base+'_context';prefix=base+'_typed_'
+            wrappers=f'''static void {prefix}init(const br_hash_class **p) {{ {base}_init(({typ} *)(void *)p); }}
+static void {prefix}update(const br_hash_class **p, const void *d, size_t n) {{ {base}_update(({typ} *)(void *)p,d,n); }}
+static void {prefix}out(const br_hash_class *const *p, void *d) {{ {base}_out((const {typ} *)(const void *)p,d); }}
+static uint64_t {prefix}state(const br_hash_class *const *p, void *d) {{ return {base}_state((const {typ} *)(const void *)p,d); }}
+static void {prefix}set_state(const br_hash_class **p, const void *d, uint64_t n) {{ {base}_set_state(({typ} *)(void *)p,d,n); }}
+'''
+            needle='const br_hash_class '+base+'_vtable = {'
+            if text.count(needle)!=1:raise ValueError('hash vtable changed')
+            text=text.replace(needle,wrappers+needle)
+            for op in ('init','update','out','state','set_state'):
+                pattern=r'\((?:void|uint64_t) \(\*\)\([^;{}]*?\)\)\s*&'+base+'_'+op+r'\b'
+                text,count=re.subn(pattern,prefix+op,text)
+                if count!=1:raise ValueError('hash vtable cast changed: '+base+' '+op)
+        path.write_text(text,newline='\n')
 
 def archive(fetch=False):
     spec = json.loads((ROOT/'xnu/native.lock.json').read_text())['portable_crypto']
@@ -73,12 +101,13 @@ def install(src):
                 raise ValueError('pinned crypto support header changed: '+name)
             text = text.replace(old,new)
         (dest/name).write_text(text,newline='\n')
-    for name in ('ums512_rng.h','ums512_rng.c','ums512_crypto.c'):
+    typed_vtables(dest)
+    for name in ('ums512_rng.h','ums512_rng.c','ums512_crypto.c','ums512_aes.h','ums512_aes.c'):
         shutil.copyfile(ROOT/'xnu/platform/ums512'/name,dest/name)
-    files = ['ums512_crypto.c','ums512_rng.c',*['br_'+Path(n).name for n in SOURCES]]
+    files = ['ums512_crypto.c','ums512_rng.c','ums512_aes.c',*['br_'+Path(n).name for n in SOURCES]]
     config = Path(src)/'libkern/conf/files'
     with config.open('a',newline='\n') as output:
         for name in files:
             output.write(f'\nlibkern/ums512/{name}\toptional ums512\n')
-    print('CRYPTO: BearSSL0.6 RNG/digest/HMAC and lab RSA verifier; no cipher or corecrypto RSA registration',flush=True)
+    print('CRYPTO: BearSSL0.6 RNG/digest/HMAC/AES-CBC and lab RSA verifier; no AEAD or corecrypto RSA registration',flush=True)
     return dest

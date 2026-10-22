@@ -57,6 +57,15 @@ def plain_panic_arguments(block):
     return struct.unpack_from('<QI',block)
 
 
+def interrupt_mask_panic_arguments(block):
+    """Exact pinned Darwin varargs ABI; omit the dynamic extra-info pointer."""
+    if len(block) != 64:
+        raise ValueError('interrupt-mask panic argument size mismatch')
+    reason,elapsed,start,now,timeout,_,source=struct.unpack_from('<7Q',block)
+    line=struct.unpack_from('<I',block,56)[0]
+    return reason,elapsed,start,now,timeout,source,line
+
+
 def image_cstring(data, segments, pointer, limit=512):
     """Only public audited-image strings, never arbitrary target memory."""
     owner = next((s for s in segments if s['vmaddr'] <= pointer < s['vmaddr']+s['filesize']),None)
@@ -342,6 +351,17 @@ def inspect_crypto(rsp, sym, result):
             record[name] = {'address':hex(sym[name]),'value':hex(value)}
     pointer = int(record.get('_g_crypto_funcs',{}).get('value','0'),16)
     if pointer:
+        # Pinned register_crypto.h:13 digest/HMAC pointers, then2 ECB pointers.
+        # Only public mode descriptors/callback addresses, never key schedules.
+        words=bytes.fromhex(rsp.command(f'm{pointer+15*8:x},10'))
+        modes={}
+        for name,address in zip(('encrypt','decrypt'),struct.unpack('<2Q',words)):
+            mode={'address':hex(address)}
+            if address:
+                size,block,init,update=struct.unpack('<4Q',bytes.fromhex(rsp.command(f'm{address:x},20')))
+                mode.update(context_bytes=size,block_bytes=block,init=hex(init),update=hex(update))
+            modes[name]=mode
+        record['aes_cbc_modes']=modes
         # register_crypto.h: four Random callbacks after40 preceding pointers.
         words = bytes.fromhex(rsp.command(f'm{pointer+40*8:x},20'))
         record['random_callbacks'] = [hex(v) for v in struct.unpack('<4Q',words)]
@@ -510,7 +530,7 @@ def execute(kernel, record, out, qemu, clang):
             names = ('_arm_vm_init','_pmap_bootstrap','_kernel_bootstrap','_vm_mem_bootstrap',
                      '_vm_mem_init','_zone_bootstrap','_kmem_bootstrap','_ipc_bootstrap',
                      '_ipc_init','_sched_init','_bsd_init','_register_crypto_functions',
-                     '_ums512_crypto_startup','_register_and_init_prng',
+                     '_ums512_crypto_startup','_ums512_aes_selftest','_register_and_init_prng',
                      '_kernel_bootstrap_thread','_vm_commpage_init','_vm_commpage_text_init',
                      '_mac_policy_initmach','_trust_cache_runtime_init','_load_static_trust_cache',
                      '_machine_lockdown','_PE_lockdown_iokit',
@@ -525,6 +545,7 @@ def execute(kernel, record, out, qemu, clang):
                      '_mcache_init','_mbinit','_ml_wait_max_cpus','_ml_set_max_cpus',
                      '_ums512_qemu_finalize_cpu_topology','_IOMapperIOVMAlloc',
                      '_audit_init','_domaininit','_dlil_init','_skywalk_init','_sysctl_mib_init',
+                     '_tcp_init','_aes_encrypt_key128','_aes_encrypt_key','_ums512_aes_init',
                      '_ums512_pthread_register','_ums512_pthread_start','_pthread_kext_register',
                      '_pthread_init','__pthread_init',
                      '__ZN15RMXQemuPlatform5startEP9IOService',
@@ -647,13 +668,22 @@ def execute(kernel, record, out, qemu, clang):
                         plain = bool(panic_format and panic_format.endswith(' @%s:%d') and
                                      '%' not in panic_format[:-len(' @%s:%d')])
                         security_message=panic_format=='QEMU lab security runtime test: %s @%s:%d'
-                        length = 336 if fault else 24 if security_message else 16 if plain else 0
+                        hygiene=panic_format=='%s for %llu nanoseconds (start = %llu, now = %llu, timeout = %llu ns%s) @%s:%d'
+                        length = 336 if fault else 64 if hygiene else 24 if security_message else 16 if plain else 0
                         block = bytes.fromhex(rsp.command(f'm{int(regs["sp"],16):x},{length:x}')) if length else b''
                         values = (struct.unpack('<5Q',block[:40]) if fault else
                                   struct.unpack_from('<QQI',block) if security_message else
-                                  plain_panic_arguments(block) if plain else ())
+                                  plain_panic_arguments(block) if plain else
+                                  interrupt_mask_panic_arguments(block) if hygiene else ())
                         result['panic_stack_argument_words'] = [hex(v) for v in values]
                         result['panic_stack_source_strings'] = [image_cstring(data,report['segments'],v) for v in values]
+                        if hygiene:
+                            reason=image_cstring(data,report['segments'],values[0])
+                            source=image_cstring(data,report['segments'],values[5])
+                            if reason not in ('Interrupts held disabled','Stackshot disabled interrupts') or source != 'machine_routines_common.c':
+                                raise ValueError('interrupt-mask panic static strings mismatch')
+                            result['interrupt_mask_watchdog']=dict(reason=reason,elapsed_ns=values[1],
+                                start_ticks=values[2],now_ticks=values[3],timeout_ns=values[4],source=source,line=values[6])
                         if fault:
                             # Exact panic_with_thread_kernel_state argument order
                             # in pinned sleh.c. Darwin variadic arguments use
