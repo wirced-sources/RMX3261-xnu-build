@@ -44,6 +44,7 @@ PATCHES = (
     "xnu/patches-ums512/0017-reserve-physmap-alignment-slack.patch",
     "xnu/patches-ums512/0018-qemu-kernel-api-validation.patch",
     "xnu/patches-ums512/0019-qemu-group1-irq-backend.patch",
+    "xnu/patches-ums512/0020-qemu-laboratory-security-runtime.patch",
     "xnu/patches/0005-non-pac-build-fixes.patch",
 )
 CAPSULE = (
@@ -52,6 +53,8 @@ CAPSULE = (
     "xnu/platform/ums512/ums512_img4_vectors.h",
     "xnu/platform/ums512/ums512_gic.c", "xnu/platform/ums512/ums512_irq_test.c",
     "xnu/platform/ums512/ums512_sched_test.c",
+    "xnu/platform/ums512/ums512_security.h", "xnu/platform/ums512/ums512_security.c",
+    "xnu/platform/ums512/ums512_image4_runtime.c", "xnu/platform/ums512/ums512_trustcache.c",
     "tools/crypto_check.py", "tests/crypto_rng_kat.c",
     "tools/xnu_crypto.py", "xnu/platform/ums512/ums512_rng.h",
     "xnu/platform/ums512/ums512_rng.c", "xnu/platform/ums512/ums512_crypto.c",
@@ -178,6 +181,15 @@ def prepare(work):
         for name in ('ums512_img4.c','security_abi.c',*CFILES):
             config_stream.write(f'\nlibkern/ums512_img4/{name}\toptional ums512\n')
     shutil.copyfile(ROOT / "xnu/platform/ums512/UMS512.h", src / "pexpert/pexpert/arm64/UMS512.h")
+    for name in ('ums512_image4_runtime.c','ums512_trustcache.c','ums512_security.h'):
+        shutil.copyfile(ROOT/'xnu/platform/ums512'/name,src/'libkern/ums512_img4'/name)
+    with (src/'libkern/conf/files').open('a',newline='\n') as config_stream:
+        for name in ('ums512_image4_runtime.c','ums512_trustcache.c'):
+            config_stream.write(f'\nlibkern/ums512_img4/{name}\toptional ums512\n')
+    (src/'bsd/ums512').mkdir()
+    shutil.copyfile(ROOT/'xnu/platform/ums512/ums512_security.c',src/'bsd/ums512/ums512_security.c')
+    with (src/'bsd/conf/files').open('a',newline='\n') as config_stream:
+        config_stream.write('\nbsd/ums512/ums512_security.c\toptional ums512\n')
     (src / "osfmk/ums512").mkdir()
     shutil.copyfile(ROOT / "xnu/platform/ums512/cpu_entry.h", src / "osfmk/ums512/cpu_entry.h")
     shutil.copyfile(ROOT / 'xnu/platform/ums512/ums512_runtime.c',src / 'osfmk/ums512/ums512_runtime.c')

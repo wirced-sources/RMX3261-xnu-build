@@ -450,13 +450,15 @@ def execute(kernel, record, out, qemu, clang):
                      '_ums512_runtime_selftest',
                      '_ums512_gic_init','_sleh_irq','_rtclock_intr','_ums512_irq_selftest',
                      '_ums512_scheduler_selftest',
+                     '_ums512_security_init','_ums512_security_runtime_test',
+                     '_vm_set_restrictions','_OSKextRemoveKextBootstrap',
                      '_kmem_crypto_init','_Assert','_panic')
             boundaries = {sym[n]:n for n in names if n in sym}
             for address in boundaries:
                 if rsp.command(f'Z1,{address:x},4') != 'OK':
                     raise RuntimeError('QEMU init-boundary breakpoint unavailable')
             deadline = time.monotonic()+45
-            for _ in range(64):
+            for _ in range(96):
                 remaining = deadline-time.monotonic()
                 if remaining <= 0:
                     result['bounded_run_timeout'] = True
@@ -478,6 +480,15 @@ def execute(kernel, record, out, qemu, clang):
                             value = int.from_bytes(bytes.fromhex(rsp.command(f'm{sym[key]:x},8')),'little')
                             observed[key] = {'address':hex(sym[key]),'value':hex(value)}
                     result['security_interface_observations'] = observed
+                if '_ums512_security_proof' in sym and name in ('return:_ums512_security_runtime_test','_panic','_bsd_init'):
+                    raw=bytes.fromhex(rsp.command(f'm{sym["_ums512_security_proof"]:x},40'))
+                    result['security_runtime_tests']=dict(zip(
+                        ('registered','firmware_cases','cache_cases','query_cases','policy_cases',
+                         'stock_runtime_ready','complete','execution_quarantined'),struct.unpack('<8Q',raw)))
+                    result['trust_cache_runtime_init_completed']= '_trust_cache_runtime_init' in result['returned_init_functions']
+                    result['security_runtime_tests_passed']=(result['security_runtime_tests']['complete']==1 and
+                        result['security_runtime_tests']['cache_cases']==30 and
+                        result['security_runtime_tests']['execution_quarantined']==1)
                 if runtime_requested and name in ('return:_ums512_runtime_selftest','_panic'):
                     for symbol,fields in (
                         ('_ums512_irq_proof',('initialized','irq_entries','timer_interrupts','timer_returns','spurious','sgi_interrupts','last_intid','distributor_control')),

@@ -92,7 +92,7 @@ ABI. PureDarwin iig-tools commit 28010c688caab7eb5400b9c98faa5b1e538e0108 is
 rejected: it uses FNV-1a message IDs and ignores trailing Clang flags, so it cannot
 be mixed with Apple's generated DriverKit interfaces.
 
-## Verified state
+## Historical native build progress before the portable provider
 
 Xcode15.4 in the authorized macOS CI has compiled genuine allocator builtins,
 built the native host dependencies, generated XNU headers and LINKED/AUDITED
@@ -202,6 +202,31 @@ unrecognized panic argument blocks and unused stack slots are not exported.
 
 ## Experimental trust verifier and interrupt backend
 
+The current security integration adds a real Image4 v9 ABI subset around the
+same verifier: private payload/manifest snapshots, ownership/deallocation,
+firmware evaluate/execute error propagation and an explicit laboratory chip.
+Only bare `trst` objects are supported. Nonces, vnode evaluation, other flags,
+custom/Apple chip environments and newer Image4 features are unsupported and
+cannot authenticate. This is not an implementation of all AppleImage4 v18.
+
+The TrustCache v3 ABI adapter supports authenticated owned module snapshots,
+UUID duplicate checks, registry-validated query tokens and all v3 accessors.
+Only private type0x80 is accepted; this is NOT an Apple platform trust category.
+Raw modules, Apple static/engineering/legacy caches and nonce-personalized types
+are denied. Registry operations use an actual XNU mutex. Modules are bounded,
+non-unloadable and checked for post-load corruption before queries.
+
+Before publishing the real interfaces, an early mandatory MAC policy registers
+an execution quarantine: code-signature attachment, exec, executable mmap,
+anonymous executable mappings, executable mprotect, invalid-code exceptions and
+code-signing flag changes are denied. Data mappings retain their ordinary policy.
+This deliberately blocks ALL userspace execution pending CodeDirectory/CMS/page
+integration; a valid lab manifest does not grant code execution. Entitlement
+queries deny privileges, CoreEntitlements version0 advertises no interpreter.
+No production AMFI compatibility, entitlements or Apple boot trust are claimed.
+The stock trust_cache_runtime_init and subsequent startup calls remain intact.
+Native build and runtime evidence for this new integration are pending.
+
 The added libDER/libDERImg4 subset is pinned to OpenCore
 25d02c8d051dc2e9d9166b5a3b343ec5b77104cc and fetched with size/SHA256 verification.
 Its APSL2/BSD notices are retained in the isolated tree. Platform headers,
@@ -235,3 +260,21 @@ must expire through the original timer/scheduler path. These are opt-in tests,
 not a replacement scheduler or an SMP implementation. The lab trust backend
 also performs authenticated CDHash queries, with unknown/unauthenticated inputs
 rejected; it still grants no execution rights or entitlements.
+
+Run39790947172 subsequently completed upstream make install, strict audit and
+two fresh genuine kernel executions. Kernel19807288 bytes/SHA256
+41e34f27e437effdf59b4809fd79036d23e29ad32ce289724e99ee931d9aa2e9,
+18 segments,72112 validated local relocations,0 undefined imports. Real arm_init
+at0xfffffe0007bb6758 and actual hook return were observed. Both boots passed33
+trust checks,8 wired allocations/832KiB and8 kernel IPC roundtrips,9 timer IRQ
+entries/rtclock returns,3 timer_call callbacks,1 self-SGI,4 worker semaphore
+handshakes and a timed-out empty wait. The termination flag is set before the
+last worker reply; it is not proof of thread reaping. The last stock startup
+function remains trust_cache_runtime_init, then the original Image4 panic with
+img4if=amfi=0. Independent build39793380415 completed with the exact same
+19807288-byte unstripped kernel/SHA256, without binary normalization. Its two
+fresh boots repeated all checks, so four boots across two independent full
+builds passed. Timer IRQ counts were9/9/10/8 (asynchronous timing varies), with
+three requested callbacks, one self-SGI and four semaphore exchanges each.
+Native30 also verified the actual QEMU FDT timer binding before loading the
+kernel. All new runtime evidence is separate from historical cold diagnostics.

@@ -1,0 +1,31 @@
+--- a/osfmk/kern/startup.c
++++ b/osfmk/kern/startup.c
+@@ -122,5 +122,7 @@
+ /* Opt-in QEMU tests; original security guards are unchanged. */
+ extern void ums512_runtime_selftest(void);
++extern void ums512_security_init(void);
++extern void ums512_security_runtime_test(void);
+ #endif
+ #include <sys/codesign.h>
+ #include <sys/kdebug.h>
+@@ -716,6 +718,10 @@
+ 	vm_commpage_text_init();
+ 
+ #if CONFIG_MACF
++#if UMS512
++	/* Register the restrictive lab MAC policy before mac_late is set. */
++	ums512_security_init();
++#endif
+ 	kernel_bootstrap_log("mac_policy_initmach");
+ 	mac_policy_initmach();
+ #if CONFIG_VNGUARD
+@@ -748,6 +754,9 @@
+ 	/* Initialize the runtime for the trust cache interface */
+ 	trust_cache_runtime_init();
+ 
++#if UMS512
++	ums512_security_runtime_test();
++#endif
+ 	/* Load the static and engineering trust caches */
+ 	load_static_trust_cache();
+ #endif

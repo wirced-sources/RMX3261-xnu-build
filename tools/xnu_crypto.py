@@ -49,7 +49,9 @@ def install(src):
             if name.startswith('src/') and name.endswith('.c'):
                 base = 'br_'+base
             (dest/base).write_bytes(data)
-    # XNU uses a freestanding header set. Keep the algorithm sources untouched.
+    # XNU uses freestanding headers and strict narrowing diagnostics. Adapt
+    # headers/conversions and bound the public RSA unpadding inputs; retain
+    # the verification algorithms and every authentication check.
     fixes = {
         'inner.h': [('#include <limits.h>', '#ifdef KERNEL\n#include <machine/limits.h>\n#else\n#include <limits.h>\n#endif')],
         'br_rsa_pkcs1_sig_unpad.c': [

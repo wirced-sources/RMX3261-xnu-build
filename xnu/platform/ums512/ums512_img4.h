@@ -14,3 +14,7 @@ enum ums512_img4_result {
 enum ums512_img4_result ums512_img4_verify(const uint8_t *,size_t,const uint8_t *,size_t);
 enum ums512_img4_result ums512_img4_query(const uint8_t *,size_t,const uint8_t *,size_t,const uint8_t [20]);
 unsigned ums512_img4_selftest(void);
+/* Structural validation is deliberately NOT authentication. */
+int ums512_img4_module_valid(const uint8_t *, size_t);
+void ums512_img4_sha256(const void *, size_t, uint8_t[32]);
+int ums512_img4_vector(unsigned, const uint8_t **, size_t *, const uint8_t **, size_t *, int *);

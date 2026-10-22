@@ -186,6 +186,23 @@ static int module_valid(const uint8_t *p,size_t n)
     return 1;
 }
 
+int ums512_img4_module_valid(const uint8_t *p,size_t n)
+{
+    return p && n<=24600 && module_valid(p,n);
+}
+void ums512_img4_sha256(const void *p,size_t n,uint8_t digest[32])
+{
+    hash256(p,n,digest);
+}
+int ums512_img4_vector(unsigned i,const uint8_t **p,size_t *n,
+    const uint8_t **m,size_t *len,int *accepted)
+{
+    if (i>=sizeof(ums_img4_cases)/sizeof(ums_img4_cases[0])) { return 0; }
+    const struct ums_img4_case *v=&ums_img4_cases[i];
+    *p=v->payload; *n=v->payload_size; *m=v->manifest; *len=v->manifest_size; *accepted=v->accepted;
+    return 1;
+}
+
 enum ums512_img4_result ums512_img4_verify(const uint8_t *payload,size_t bytes,const uint8_t *manifest,size_t len)
 {
     if (!payload || !manifest || !bytes || bytes>24600 || !len || len>65536) { return UMS_IMG4_ARGUMENT; }
