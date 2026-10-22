@@ -2,7 +2,7 @@
 
 --fetch downloads pinned Apple OSS sources. --prepare is offline and portable.
 --build requires macOS/Xcode; never installs a KDK, changes xcode-select, exports
-an SDK, runs a diagnostic observer, or substitutes allocator/crypto/CS routines.
+an SDK, runs a diagnostic observer, or supplies allocator/crypto/CS success stubs.
 --capsule exports a fixed text-only allowlist, without publishing anything.
 """
 import argparse

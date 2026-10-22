@@ -21,6 +21,9 @@ def check(source, compiler=None):
               else [compiler or 'clang'])
     command = [*prefix,'-std=c11','-O2','-Wall','-Wextra','-Werror','-I'+path(source),
                *map(path,paths),'-o',path(binary)]
+    if platform.system() == 'Darwin':
+        sdk = subprocess.check_output(['xcrun','--sdk','macosx','--show-sdk-path'],text=True,timeout=30).strip()
+        command[1:1] = ['-isysroot',sdk]
     subprocess.run(command,check=True,timeout=90)
     command = (['wsl','-d','Ubuntu','--exec',path(binary)] if platform.system() == 'Windows' else [str(binary)])
     subprocess.run(command,check=True,timeout=15)

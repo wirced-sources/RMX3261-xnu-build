@@ -18,9 +18,9 @@ _Static_assert(MAX_CPUS == 1, "PRNG CPU integration requires explicit SMP suppor
 _Static_assert(sizeof(struct ums512_rng) <= CRYPTO_RANDOM_MAX_CTX_SIZE, "KMEM context too large");
 static struct ums512_rng master_rng;
 static struct cckprng_ctx prng_handle;
-static cckprng_getentropy entropy_source;
-static void *entropy_arg;
-static bool generator_ready;
+static SECURITY_READ_ONLY_LATE(cckprng_getentropy) entropy_source;
+static SECURITY_READ_ONLY_LATE(void *) entropy_arg;
+static SECURITY_READ_ONLY_LATE(bool) generator_ready;
 static uint64_t fresh_samples;
 LCK_GRP_DECLARE(ums512_crypto_group, "ums512 crypto");
 LCK_MTX_DECLARE(ums512_crypto_mutex, &ums512_crypto_group);
@@ -109,7 +109,7 @@ static int root_generate(struct ccrng_state *ctx, size_t n, void *out)
     return 0;
 }
 
-static struct ccrng_state root_rng = { .generate = root_generate };
+static SECURITY_READ_ONLY_LATE(struct ccrng_state) root_rng = { .generate = root_generate };
 static struct ccrng_state *root_context(int *error)
 {
     if (!generator_ready) { panic("UMS512 root RNG before seed"); }

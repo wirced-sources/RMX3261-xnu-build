@@ -401,6 +401,9 @@ def execute(kernel, record, out, qemu, clang):
                      '_vm_mem_init','_zone_bootstrap','_kmem_bootstrap','_ipc_bootstrap',
                      '_ipc_init','_sched_init','_bsd_init','_register_crypto_functions',
                      '_ums512_crypto_startup','_register_and_init_prng',
+                     '_kernel_bootstrap_thread','_vm_commpage_init','_vm_commpage_text_init',
+                     '_mac_policy_initmach','_trust_cache_runtime_init','_load_static_trust_cache',
+                     '_machine_lockdown','_PE_lockdown_iokit',
                      '_kmem_crypto_init','_Assert','_panic')
             boundaries = {sym[n]:n for n in names if n in sym}
             for address in boundaries:
@@ -488,6 +491,10 @@ def execute(kernel, record, out, qemu, clang):
                 rsp.command(f'z1,{int(regs["pc"],16):x},4')
                 if name.startswith('return:'):
                     result['returned_init_functions'].append(name[7:])
+                    # Startup callbacks reuse one dispatcher LR. Re-arm that
+                    # address for the next function rather than retaining a
+                    # stale return name after its hardware breakpoint is gone.
+                    boundaries.pop(int(regs['pc'],16),None)
                 elif name != '_kernel_bootstrap':
                     # A function entry does not prove initialization completed.
                     # Observe its real caller return address without changing LR.
