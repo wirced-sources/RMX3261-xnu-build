@@ -525,6 +525,8 @@ def execute(kernel, record, out, qemu, clang):
                      '_mcache_init','_mbinit','_ml_wait_max_cpus','_ml_set_max_cpus',
                      '_ums512_qemu_finalize_cpu_topology','_IOMapperIOVMAlloc',
                      '_audit_init','_domaininit','_dlil_init','_skywalk_init','_sysctl_mib_init',
+                     '_ums512_pthread_register','_ums512_pthread_start','_pthread_kext_register',
+                     '_pthread_init','__pthread_init',
                      '__ZN15RMXQemuPlatform5startEP9IOService',
                      '__ZN15RMXQemuPlatform9configureEP9IOService',
                      '_kmem_crypto_init','_Assert','_panic')

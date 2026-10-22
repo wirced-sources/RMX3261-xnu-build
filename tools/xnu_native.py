@@ -47,6 +47,7 @@ PATCHES = (
     "xnu/patches-ums512/0020-qemu-laboratory-security-runtime.patch",
     "xnu/patches-ums512/0021-qemu-pl011-console.patch",
     "xnu/patches-ums512/0022-qemu-platform-personality.patch",
+    "xnu/patches-ums512/0023-monolithic-pthread-registration.patch",
     "xnu/patches/0005-non-pac-build-fixes.patch",
 )
 CAPSULE = (
@@ -59,6 +60,7 @@ CAPSULE = (
     "xnu/platform/ums512/ums512_image4_runtime.c", "xnu/platform/ums512/ums512_trustcache.c",
     "xnu/platform/ums512/ums512_pl011.inc",
     "xnu/platform/ums512/QemuVirtPlatform.cpp",
+    "tools/xnu_pthread.py", "xnu/platform/ums512/ums512_pthread.c",
     "tools/crypto_check.py", "tests/crypto_rng_kat.c",
     "tools/xnu_crypto.py", "xnu/platform/ums512/ums512_rng.h",
     "xnu/platform/ums512/ums512_rng.c", "xnu/platform/ums512/ums512_crypto.c",
@@ -176,6 +178,8 @@ def prepare(work):
     for patch in PATCHES:
         output("git", "-C", src, "apply", "--check", ROOT / patch)
         output("git", "-C", src, "apply", ROOT / patch)
+    from xnu_pthread import install as install_pthread
+    install_pthread(source('libpthread'),src)
     from xnu_crypto import install as install_crypto
     install_crypto(src)
     from image4_vendor import install as install_image4,CFILES
@@ -414,6 +418,8 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
               # In 8796, BUILD_JSON_COMPILATION_DATABASE=1 REPLACES compiling
               # with command generation. It must not be set for a real build.
               "CONCISE=0", "VERBOSE=NO"]
+    from xnu_pthread import flags as pthread_flags
+    native.extend(pthread_flags(src))
     run(["make", "installhdrs", "-j2", *native], "xnu-headers", report, env, src)
     xbuild("Libsystem", "installhdrs", ["FAKEROOT_DIR=" + str(fake)])
     run(["xcodebuild", "installhdrs", "-sdk", "macosx", "-jobs", "2", "ARCHS=arm64", "VALID_ARCHS=arm64",

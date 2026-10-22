@@ -273,6 +273,21 @@ a CPU/interrupt-controller facade. Only the current single CPU is supported;
 this is not SMP/PSCI CPU-on. The next native trace observes that publication,
 actual mcache/mbuf paths and later BSD stages.
 
+Run39818436348 returned from ml_set_max_cpus, ml_wait_max_cpus, mcache_init,
+IOMapperIOVMAlloc, mbinit and audit_init in both fresh boots. Its next original
+panic is pthread_shims.c:318: the pthread kernel function table is NULL.
+The matching Apple release manifest provides libpthread514.100.2. The follow-up
+statically compiles its real kern_init/kern_support/kern_synch units and invokes
+the original pthread_start/pthread_kext_register before the unchanged pthread_init.
+This adds source to the kernel build, not a dynamically loaded unsigned kext.
+All signing/MAC guards remain. Four module-private names are isolated from core
+XNU; original kext header context is used only for those units. A real ABI mismatch
+is addressed explicitly: libpthread's ARM64 ksyn_waitq_element is56 bytes/aligned8,
+whereas this open XNU's opaque storage was48/aligned1. For this board the whole
+uthread layout is rebuilt with56/aligned8; both real provider and native storage
+compile-time assert the same size/alignment. No function-table substitute or
+fake initializer is provided. Full native compilation/execution is pending.
+
 Run39805659988 acquired its runner and passed allocator/compiler, crypto/verifier
 and generated-header/dependency gates. Full kernel compilation stopped at the
 Image4 log forwarder: -Wformat-nonliteral required its own printf-style attribute.

@@ -1,0 +1,30 @@
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -728,6 +728,11 @@
+ 	bsd_init_kprintf("calling aio_init\n");
+ 	aio_init();
+ 
++#if UMS512
++	/* Genuine statically linked libpthread; original init/guard remain. */
++	extern void ums512_pthread_register(void);
++	ums512_pthread_register();
++#endif
+ 	pthread_init();
+ 	/* POSIX Shm and Sem */
+ 	bsd_init_kprintf("calling pshm_cache_init\n");
+--- a/bsd/sys/pthread_internal.h
++++ b/bsd/sys/pthread_internal.h
+@@ -34,7 +34,13 @@
+ 
+ struct ksyn_waitq_element {
+ #if __LP64__
++#if UMS512
++	/* Pinned libpthread514.100.2: seven pointer-aligned ARM64 granules.
++	 * Whole-kernel uthread layout and generated offsets are rebuilt together. */
++	uint64_t opaque[7];
++#else
+ 	char opaque[48];
++#endif
+ #else
+ 	char opaque[32];
+ #endif

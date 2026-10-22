@@ -48,6 +48,12 @@
       "commit": "cdb61e93e803d0093635f356753a9a30c09836db",
       "tree": "7c1b1f01f4ef38eb30bd596c39a613b311da1977"
     },
+    "libpthread": {
+      "repository": "https://github.com/apple-oss-distributions/libpthread",
+      "tag": "libpthread-514.100.2",
+      "commit": "a6c70ca0e544347a0377babf748f831577ec24f9",
+      "tree": "2c6e562ba916bb888250c21f1333dd6f7983f6c6"
+    },
     "libplatform": {
       "repository": "https://github.com/apple-oss-distributions/libplatform",
       "tag": "libplatform-292.120.1.0.1",
@@ -75,6 +81,6 @@
       "APSL-2.0",
       "BSD"
     ],
-    "policy": "closed QEMU test root/chain; never registered as Image4/AMFI"
+    "policy": "Pinned QEMU lab root/chain, private authenticated cache type; separate restricted Image4 runtime and mandatory execution quarantine. No Apple trust or entitlement grants."
   }
 }
