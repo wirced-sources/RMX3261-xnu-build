@@ -354,6 +354,18 @@ def inspect_crypto(rsp, sym, result):
     result.setdefault('crypto_registration_observations',[]).append(record)
 
 
+def virtual_cpu_binding(tree):
+    """This native profile is UP; validate actual QEMU FDT before making ADT."""
+    cpus=[n for n in tree.nodes.values() if n.props.get('device_type')==b'cpu\0']
+    if len(cpus)!=1:
+        raise ValueError('QEMU native UP profile requires exactly one CPU')
+    cpu=cpus[0]
+    if (cpu.props.get('status',b'okay\0') not in (b'okay\0',b'ok\0') or
+        tree.reg(cpu)!=[(0,0)]):
+        raise ValueError('QEMU bootstrap CPU must be enabled with affinity zero')
+    return dict(count=1,physical_id=0,path=cpu.path)
+
+
 def execute(kernel, record, out, qemu, clang):
     data = kernel.read_bytes()
     report = audit(data, zero_slide_local_relocations=True)
@@ -372,6 +384,7 @@ def execute(kernel, record, out, qemu, clang):
     fdt_path = out/'qemu.dtb'
     subprocess.run([*base_cmd, '-machine', machine+',dumpdtb='+str(fdt_path), '-display','none'], check=True, capture_output=True, timeout=20)
     tree = FDT(fdt_path.read_bytes())
+    cpu_binding=virtual_cpu_binding(tree)
     timer_binding=virtual_timer_binding(tree)
     memory = [tree.reg(n) for n in tree.nodes.values() if n.props.get('device_type') == b'memory\0']
     gics = [tree.reg(n) for n in tree.nodes.values() if 'arm,gic-v3' in n.strings('compatible')]
@@ -396,7 +409,7 @@ def execute(kernel, record, out, qemu, clang):
     adt = node('device-tree', [('model',b'qemu,virt\0')], [
         node('defaults'), # pmap requires the node; absent ASID property uses its real default.
         node('chosen', [('dram-base',struct.pack('<Q',pa)),('dram-size',struct.pack('<Q',mem)),('random-seed',os.urandom(64))], [node('memory-map')]),
-        node('cpus', children=[node('cpu0',[('device_type',b'cpu\0'),('state',b'running\0'),('reg',struct.pack('<I',0)),('timebase-frequency',struct.pack('<I',0))])]),
+        node('cpus', children=[node('cpu0',[('device_type',b'cpu\0'),('state',b'running\0'),('reg',struct.pack('<I',cpu_binding['physical_id'])),('timebase-frequency',struct.pack('<I',0))])]),
         node('arm-io',[('device_type',b'qemu,virt\0'),('ranges',struct.pack('<3Q',0,gicd[0],devices_end-gicd[0]))],
             [node('gic',[('reg',struct.pack('<4Q',0,gicd[1],gicr[0]-gicd[0],gicr[1]))])]+
             ([node('uart0',[('compatible',b'arm,pl011\0'),('reg',struct.pack('<2Q',uart['physical']-gicd[0],uart['bytes'])),
@@ -446,7 +459,7 @@ def execute(kernel, record, out, qemu, clang):
     result = {'kernel_sha256':report['sha256'],'arm_init_executed':False,
               'kernel_boot_completed':False,'hardware_verified':False,'stops':[],
               'boot_arguments':command_line.decode('ascii'),
-              'virtual_timer_fdt_binding':timer_binding,
+              'virtual_timer_fdt_binding':timer_binding,'virtual_cpu_fdt_binding':cpu_binding,
               'virtual_uart_fdt_binding':uart,
               'virtual_rtc_fdt_binding':rtc,
               'kernel_runtime_tests_requested':runtime_requested,
@@ -509,6 +522,9 @@ def execute(kernel, record, out, qemu, clang):
                      '_bsd_autoconf','_IOKitBSDInit','_IOFindBSDRoot','_vfs_mountroot','_vfsinit',
                      '_kminit','_bsd_init_task',
                      '_IOKitInitializeTime','_clock_initialize_calendar','_bsd_bufferinit','_kauth_init',
+                     '_mcache_init','_mbinit','_ml_wait_max_cpus','_ml_set_max_cpus',
+                     '_ums512_qemu_finalize_cpu_topology','_IOMapperIOVMAlloc',
+                     '_audit_init','_domaininit','_dlil_init','_skywalk_init','_sysctl_mib_init',
                      '__ZN15RMXQemuPlatform5startEP9IOService',
                      '__ZN15RMXQemuPlatform9configureEP9IOService',
                      '_kmem_crypto_init','_Assert','_panic')
@@ -558,6 +574,10 @@ def execute(kernel, record, out, qemu, clang):
                     raw=bytes.fromhex(rsp.command(f'm{sym["_ums512_platform_proof"]:x},40'))
                     result['platform_runtime']=dict(zip(('started','mmio_nubs','resource_ranges','rtc_identity',
                         'rtc_reads','rtc_writes','rtc_tick_verified','unsupported_resource_requests'),struct.unpack('<8Q',raw)))
+                    if '_ums512_cpu_topology_proof' in sym:
+                        raw=bytes.fromhex(rsp.command(f'm{sym["_ums512_cpu_topology_proof"]:x},40'))
+                        result['cpu_topology_runtime']=dict(zip(('published','num_cpus','max_cpu_id','boot_cpu_id',
+                            'boot_phys_id','current_affinity','machine_max_cpus','reserved0'),struct.unpack('<8Q',raw)))
                 if uart and name in ('_panic','_bsd_init','return:_ums512_security_runtime_test'):
                     raw=bytes.fromhex(rsp.command(f'm{sym["_ums512_uart_proof"]:x},40'))
                     result['uart_runtime']=dict(zip(('initialized','tx_bytes','rx_bytes','clock_hz','divisor64',
@@ -691,6 +711,9 @@ def execute(kernel, record, out, qemu, clang):
             if rtc and (result.get('platform_runtime',{}).get('started')!=1 or
                         result.get('platform_runtime',{}).get('rtc_tick_verified')!=1):
                 raise RuntimeError('QEMU Platform Expert/PL031 runtime did not complete')
+            if '_ums512_cpu_topology_proof' in sym and result.get('cpu_topology_runtime')!=dict(
+                published=1,num_cpus=1,max_cpu_id=0,boot_cpu_id=0,boot_phys_id=0,current_affinity=0,machine_max_cpus=1,reserved0=0):
+                raise RuntimeError('QEMU actual UP CPU enumeration publication did not complete')
     except Exception as error:
         result['error'] = str(error)
         raise

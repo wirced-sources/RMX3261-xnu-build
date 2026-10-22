@@ -10,6 +10,7 @@
 #include <arm/cpu_data_internal.h>
 #include <arm/rtclock.h>
 #include <machine/machine_routines.h>
+#include <mach/machine.h>
 #include <pexpert/device_tree.h>
 #include <pexpert/pexpert.h>
 #include <libkern/section_keywords.h>
@@ -19,11 +20,18 @@ struct ums512_irq_proof {
     uint64_t spurious,sgi_interrupts,last_intid,distributor_control;
 };
 volatile struct ums512_irq_proof ums512_irq_proof;
+struct ums512_cpu_topology_proof {
+    uint64_t published,num_cpus,max_cpu_id,boot_cpu_id;
+    uint64_t boot_phys_id,current_affinity,machine_max_cpus,reserved0;
+};
+volatile struct ums512_cpu_topology_proof ums512_cpu_topology_proof;
+_Static_assert(sizeof(struct ums512_cpu_topology_proof)==64,"public CPU topology proof ABI");
 static vm_offset_t distributor,redistributor;
 
 void ums512_gic_init(void);
 uint64_t ums512_gic_sgi_count(void);
 void ums512_gic_send_self_sgi(void);
+void ums512_qemu_finalize_cpu_topology(void);
 static uint32_t read32(vm_offset_t base,uint32_t offset)
 { return *(volatile uint32_t *)(base+offset); }
 static void write32(vm_offset_t base,uint32_t offset,uint32_t value)
@@ -135,6 +143,31 @@ void ums512_gic_init(void)
 }
 
 uint64_t ums512_gic_sgi_count(void) { return ums512_irq_proof.sgi_interrupts; }
+/* Platform Expert calls this after its real resource initialization. ARM's
+ * ml_set_max_cpus publishes completion of enumeration; it neither creates CPUs
+ * nor changes machine_info. The latter was set by machine_conf from read-only
+ * parsed topology. This profile supports exactly the already executing CPU.
+ * Do not instantiate a fictitious IOCPU/interrupt controller or claim CPU-on.
+ */
+void ums512_qemu_finalize_cpu_topology(void)
+{
+    const ml_topology_info_t *topology=ml_get_topology_info();
+    uint64_t affinity=__builtin_arm_rsr64("MPIDR_EL1")&UINT64_C(0xff00ffffff);
+    if (!ums512_irq_proof.initialized || ums512_cpu_topology_proof.published ||
+        !topology || topology->num_cpus!=1 || topology->max_cpu_id!=0 ||
+        !topology->boot_cpu || topology->boot_cpu->cpu_id!=0 ||
+        topology->boot_cpu->phys_id!=0 || affinity!=0 || machine_info.max_cpus!=1) {
+        panic("QEMU platform: unsupported or inconsistent CPU enumeration");
+    }
+    ums512_cpu_topology_proof.num_cpus=topology->num_cpus;
+    ums512_cpu_topology_proof.max_cpu_id=topology->max_cpu_id;
+    ums512_cpu_topology_proof.boot_cpu_id=topology->boot_cpu->cpu_id;
+    ums512_cpu_topology_proof.boot_phys_id=topology->boot_cpu->phys_id;
+    ums512_cpu_topology_proof.current_affinity=affinity;
+    ums512_cpu_topology_proof.machine_max_cpus=machine_info.max_cpus;
+    ml_set_max_cpus(topology->num_cpus);
+    ums512_cpu_topology_proof.published=1;
+}
 void ums512_gic_send_self_sgi(void)
 {
     uint64_t mpidr=__builtin_arm_rsr64("MPIDR_EL1");

@@ -262,6 +262,17 @@ does not install return breakpoints for the two nonreturning bootstrap routines.
 A shared Call_continuation PC in the initial trace belonged to another thread;
 it is not evidence that kernel_bootstrap_thread completed.
 
+Run39816207000 then returned from original IOKitInitializeTime and vfsinit in
+both fresh trials. The typed IORTC service thus satisfies the required resource
+contract; no panic followed. Before BSD autoconfiguration, mcache_init calls
+ml_wait_max_cpus. ARM waits for platform completion of CPU enumeration, which
+the initial platform had not published. The follow-up checks actual QEMU FDT
+and XNU read-only parsed topology against the executing MPIDR and machine_info,
+then calls the real ml_set_max_cpus. It neither changes machine_info nor creates
+a CPU/interrupt-controller facade. Only the current single CPU is supported;
+this is not SMP/PSCI CPU-on. The next native trace observes that publication,
+actual mcache/mbuf paths and later BSD stages.
+
 Run39805659988 acquired its runner and passed allocator/compiler, crypto/verifier
 and generated-header/dependency gates. Full kernel compilation stopped at the
 Image4 log forwarder: -Wformat-nonliteral required its own printf-style attribute.
