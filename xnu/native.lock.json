@@ -7,7 +7,7 @@
     "bytes": 765094,
     "sha256": "6705bba1714961b41a728dfc5debbe348d2966c117649392f8c8139efc83ff14",
     "license": "MIT; archive license and source notices retained",
-    "scope": "Portable HMAC_DRBG, digest and HMAC backend; no TLS, cipher, signature or policy bypass"
+    "scope": "Portable HMAC_DRBG/digest/HMAC/AES-CBC and pinned lab RSA verification; no TLS, AEAD, official Apple trust or policy bypass"
   },
   "qemu_test_host": {
     "version": "9.2.4",
