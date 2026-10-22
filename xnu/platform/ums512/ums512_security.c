@@ -37,6 +37,7 @@ struct ums512_security_proof {
     uint64_t registered,firmware_cases,cache_cases,query_cases;
     uint64_t policy_cases,stock_runtime_ready,complete,execution_quarantined;
 };
+_Static_assert(sizeof(struct ums512_security_proof)==64,"public security proof layout");
 SECURITY_READ_ONLY_LATE(volatile struct ums512_security_proof) ums512_security_proof;
 SECURITY_READ_ONLY_LATE(static amfi_t) lab_amfi;
 static mac_policy_handle_t policy_handle;

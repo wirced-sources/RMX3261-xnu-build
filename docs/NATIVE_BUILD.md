@@ -227,6 +227,12 @@ No production AMFI compatibility, entitlements or Apple boot trust are claimed.
 The stock trust_cache_runtime_init and subsequent startup calls remain intact.
 Native build and runtime evidence for this new integration are pending.
 
+Run39805659988 acquired its runner and passed allocator/compiler, crypto/verifier
+and generated-header/dependency gates. Full kernel compilation stopped at the
+Image4 log forwarder: -Wformat-nonliteral required its own printf-style attribute.
+The callback now declares __printflike(4,5); the warning is retained. No native
+kernel/boot was produced by that attempt. Full raw diagnostics remain ignored.
+
 The additional QEMU PL011 console backend is included inside the stock pe_serial
 multiplexer. Its MMIO range and fixed uartclk are validated from the actual QEMU
 FDT and exported as bounded ADT properties; no Realme UART constants are used.

@@ -510,6 +510,19 @@ def execute(kernel, record, out, qemu, clang):
                 regs = rsp.registers()
                 name = boundaries.get(int(regs['pc'],16),'other stop')
                 result['stops'].append({'boundary':name,**control_registers(regs)})
+                if name=='return:_machine_lockdown' and '_ums512_security_proof' in sym:
+                    system=rsp.system_registers()
+                    protected={}
+                    for symbol in ('_img4if','_amfi'):
+                        address=sym[symbol]
+                        value=int.from_bytes(bytes.fromhex(rsp.command(f'm{address:x},8')),'little')
+                        protected[symbol[1:]+'_pointer']=inspect_mapping(rsp,address,system)
+                        protected[symbol[1:]+'_table']=inspect_mapping(rsp,value,system)
+                    result['security_lockdown_mappings']=protected
+                    result['security_tables_read_only_nx']=all(
+                        p.get('valid') and p.get('read_only') and p.get('privileged_execute_never') for p in protected.values())
+                    if not result['security_tables_read_only_nx']:
+                        raise RuntimeError('actual security interface VA mappings are not read-only/NX after stock lockdown')
                 if uart and name in ('_panic','_bsd_init','return:_ums512_security_runtime_test'):
                     raw=bytes.fromhex(rsp.command(f'm{sym["_ums512_uart_proof"]:x},40'))
                     result['uart_runtime']=dict(zip(('initialized','tx_bytes','rx_bytes','clock_hz','divisor64',
@@ -576,9 +589,12 @@ def execute(kernel, record, out, qemu, clang):
                         # supply exactly a source filename and line number.
                         plain = bool(panic_format and panic_format.endswith(' @%s:%d') and
                                      '%' not in panic_format[:-len(' @%s:%d')])
-                        length = 336 if fault else 16 if plain else 0
+                        security_message=panic_format=='QEMU lab security runtime test: %s @%s:%d'
+                        length = 336 if fault else 24 if security_message else 16 if plain else 0
                         block = bytes.fromhex(rsp.command(f'm{int(regs["sp"],16):x},{length:x}')) if length else b''
-                        values = struct.unpack('<5Q',block[:40]) if fault else plain_panic_arguments(block) if plain else ()
+                        values = (struct.unpack('<5Q',block[:40]) if fault else
+                                  struct.unpack_from('<QQI',block) if security_message else
+                                  plain_panic_arguments(block) if plain else ())
                         result['panic_stack_argument_words'] = [hex(v) for v in values]
                         result['panic_stack_source_strings'] = [image_cstring(data,report['segments'],v) for v in values]
                         if fault:

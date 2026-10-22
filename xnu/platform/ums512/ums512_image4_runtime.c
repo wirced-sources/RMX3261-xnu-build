@@ -50,6 +50,7 @@ static void rt_free(const img4_runtime_t *rt,void *p,size_t n)
     (void)rt;
     if (p) { kfree_data(p,n); }
 }
+static void rt_log(const img4_runtime_t *rt,void *handle,img4_log_level_t level,const char *fmt,...) __printflike(4,5);
 static void rt_log(const img4_runtime_t *rt,void *handle,img4_log_level_t level,const char *fmt,...)
 {
     (void)rt; (void)handle; (void)level;
@@ -105,6 +106,10 @@ static errno_t chip_instantiate(const img4_chip_t *chip,img4_chip_instance_t *in
 {
     if (chip!=&lab_chip || !instance || instance->chid_version!=IMG4_CHIP_INSTANCE_STRUCT_VERSION) { return ENOTSUP; }
     *instance=IMG4_CHIP_INSTANCE_INIT(&lab_chip);
+    instance->chid_omit=IMG4_CHIP_INSTANCE_OMIT_IUOU|IMG4_CHIP_INSTANCE_OMIT_RSCH|
+        IMG4_CHIP_INSTANCE_OMIT_EUOU|IMG4_CHIP_INSTANCE_OMIT_ESDM|IMG4_CHIP_INSTANCE_OMIT_FPGT|
+        IMG4_CHIP_INSTANCE_OMIT_UDID|IMG4_CHIP_INSTANCE_OMIT_FCHP|IMG4_CHIP_INSTANCE_OMIT_TYPE|
+        IMG4_CHIP_INSTANCE_OMIT_STYP|IMG4_CHIP_INSTANCE_OMIT_CLAS;
     instance->chid_cepo=1; instance->chid_bord=1; instance->chid_chip=0x51564d;
     instance->chid_sdom=1; instance->chid_ecid=lab_chip.identity;
     instance->chid_cpro=true; instance->chid_csec=true;

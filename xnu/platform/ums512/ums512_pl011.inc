@@ -8,6 +8,7 @@
 struct ums512_uart_proof {
     uint64_t initialized,tx_bytes,rx_bytes,clock_hz,divisor64,physical,size,identity_verified;
 };
+_Static_assert(sizeof(struct ums512_uart_proof)==64,"public UART proof layout");
 volatile struct ums512_uart_proof ums512_uart_proof;
 SECURITY_READ_ONLY_LATE(static vm_offset_t) qemu_pl011_base;
 SECURITY_READ_ONLY_LATE(static uint32_t) qemu_pl011_clock;

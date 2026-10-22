@@ -75,6 +75,7 @@ static TCReturn_t load(TrustCacheRuntime_t *runtime,TCType_t type,TrustCache_t *
     buffer.i4b_bytes=bytes; buffer.i4b_len=size;
     img4_firmware_execution_context_t exec={.i4fex_version=IMG4_FIRMWARE_EXECUTION_CONTEXT_STRUCT_VERSION};
     img4_firmware_t fw=ums512_image4_interface.i4if_v7.firmware_new(runtime->image4RT,&exec,0x74727374,&buffer,IMG4_FIRMWARE_FLAG_BARE);
+    if (!fw) { kfree_data(bytes,size); return ret(kTCComponentLoad,kTCReturnError); }
     buffer=IMG4_BUFF_INIT; buffer.i4b_bytes=(void *)manifest; buffer.i4b_len=length;
     ums512_image4_interface.i4if_v7.firmware_attach_manifest(fw,&buffer);
     errno_t status=ums512_image4_interface.i4if_v9.firmware_evaluate(fw,
