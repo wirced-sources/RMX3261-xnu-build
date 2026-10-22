@@ -298,6 +298,16 @@ and SDK usr/include, using upstream per-object CFLAGS_ADD. No SDK/header facade
 or type/warning-check removal is used. The bridge follows native shim include
 order. Subsequent workflow attempts compile XNU before preparing the QEMU host.
 
+Run39825365247 compiled the bridge and its native wait-record ABI assertions.
+Only the three provider units remained: pointer/integer conversions at current
+callback boundaries, obsolete panic redeclaration, SDK user-zlib/kernel crc32
+collision and two implicit narrowing conversions. The installer applies exact
+reviewed source corrections: full-width address casts, integer zero user-address
+sentinels, bounded QoS/state conversion, and the genuine noreturn panic header.
+The pinned XNU libkern include root selects its namespaced kernel zlib before
+the SDK's user zlib. All warnings/type checks stay enabled. No kernel was linked
+and no QEMU execution occurred for that failed attempt.
+
 Run39805659988 acquired its runner and passed allocator/compiler, crypto/verifier
 and generated-header/dependency gates. Full kernel compilation stopped at the
 Image4 log forwarder: -Wformat-nonliteral required its own printf-style attribute.

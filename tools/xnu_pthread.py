@@ -13,6 +13,23 @@ def install(source, xnu):
     vendor=target/'vendor'
     for directory in ('kern','private','include'):
         shutil.copytree(source/directory,vendor/directory)
+    def correct(relative, old, new, count=1):
+        path=vendor/relative; text=path.read_text(encoding='utf-8')
+        if text.count(old)!=count:raise ValueError('pinned pthread source changed: '+relative)
+        path.write_text(text.replace(old,new),encoding='utf-8',newline='\n')
+    correct('kern/kern_trace.h','vm_kernel_unslide_or_perm_external(ptr,','vm_kernel_unslide_or_perm_external((vm_offset_t)ptr,')
+    correct('kern/kern_support.c','extern void panic(const char *string, ...) __printflike(1,2) __dead2;',
+            '#include <kern/debug.h> /* Real noreturn prototype and decorated panic macro. */')
+    correct('kern/kern_support.c','*kevent_list_out = NULL;','*kevent_list_out = 0;')
+    correct('kern/kern_support.c','user_addr_t kevent_list = NULL;','user_addr_t kevent_list = 0;',count=2)
+    correct('kern/kern_support.c','\t\t\t\t\t\tqos.qos_tier, 0, 0);',
+            '\t\t\t\t\t\t(thread_qos_t)qos.qos_tier, 0, 0);')
+    correct('kern/kern_support.c','if (kr == KERN_SUCCESS) {\n\t\t\t\tdata.main_qos',
+            'if (kr == KERN_SUCCESS) {\n\t\t\t\tif ((unsigned)qos.qos_tier >= THREAD_QOS_LAST) { return EINVAL; }\n\t\t\t\tdata.main_qos')
+    for name,count in (('psynch_wait_update_owner',4),('psynch_wait_complete',1),('psynch_wait_wakeup',2)):
+        correct('kern/kern_synch.c',name+'(kwq,',name+'((uintptr_t)kwq,',count=count)
+    correct('kern/kern_synch.c','kwe->kwe_state = state;',
+            'if (state>UINT16_MAX) { panic("pthread: prepost state exceeds wait element ABI"); }\n\tkwe->kwe_state = (uint16_t)state;')
     for name in ('LICENSE','APPLE_LICENSE'):
         if (source/name).is_file():shutil.copyfile(source/name,vendor/name)
     prefix='''/* Genuine pinned libpthread, original kext header context. */
@@ -45,7 +62,10 @@ def flags(xnu, sdk, exported):
     # and freshly installed Kernel.framework headers instead. Only these three
     # units get this order; no compatibility/type facade is generated.
     framework=Path('System/Library/Frameworks/Kernel.framework')
-    paths=[Path(exported)/framework/p for p in ('PrivateHeaders','Headers')]
+    # Kernel zlib is namespaced (z_crc32); the SDK user zlib conflicts with
+    # kernel crc32. Select the genuine pinned XNU libkern header first.
+    paths=[Path(xnu)/'libkern']
+    paths += [Path(exported)/framework/p for p in ('PrivateHeaders','Headers')]
     paths += [Path(sdk)/framework/p for p in ('PrivateHeaders','Headers')]
     paths += [vendor/p for p in ('.','private','include')]
     paths += [Path(sdk)/'usr/include']
