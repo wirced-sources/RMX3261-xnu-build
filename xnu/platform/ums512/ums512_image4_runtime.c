@@ -10,6 +10,11 @@
 #include <sys/errno.h>
 #include <kern/debug.h>
 #include <kern/kalloc.h>
+#if MACH_KERNEL_PRIVATE
+#include <kern/misc_protos.h>
+#else
+#include <libkern/libkern.h>
+#endif
 #include <libkern/img4/interface.h>
 #include "ums512_img4.h"
 #include "ums512_security.h"
