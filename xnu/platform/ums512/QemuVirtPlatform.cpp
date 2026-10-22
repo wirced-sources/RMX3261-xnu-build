@@ -11,6 +11,7 @@
 #include <IOKit/IODeviceMemory.h>
 #include <IOKit/IOMemoryDescriptor.h>
 #include <IOKit/IOLib.h>
+#include <IOKit/rtc/IORTCController.h>
 #include <libkern/c++/OSData.h>
 #include <libkern/c++/OSArray.h>
 
@@ -22,6 +23,7 @@ struct ums512_platform_proof {
 volatile struct ums512_platform_proof ums512_platform_proof;
 }
 static_assert(sizeof(ums512_platform_proof)==64,"public platform proof ABI");
+static bool publish_qemu_rtc(IOService *provider);
 
 class RMXQemuPlatform : public IOPlatformExpert {
     OSDeclareDefaultStructors(RMXQemuPlatform);
@@ -125,6 +127,7 @@ bool RMXQemuPlatform::start(IOService *provider)
     }
     if (!ums512_platform_proof.rtc_tick_verified) { panic("QEMU platform: RTC counter failed to advance"); }
     if (!IOPlatformExpert::start(provider)) { return false; }
+    if (!publish_qemu_rtc(this)) { panic("QEMU platform: IORTC service creation failed"); }
     registerService();
     ums512_platform_proof.started=1;
     IOLog("RMX-QEMU: Platform Expert and PL031 RTC ready\n");
@@ -170,3 +173,46 @@ void RMXQemuPlatform::setGMTTimeOfDay(long seconds)
     rtcWrite(8,static_cast<uint32_t>(seconds));
 }
 int RMXQemuPlatform::haltRestart(unsigned type) { (void)type; return ENOTSUP; }
+
+/* A genuine typed IORTC service, backed by the already mapped/verified PL031.
+ * Publish readiness only after reading through this interface. Alarm/power
+ * semantics are unsupported, and cannot silently report success.
+ */
+class RMXQemuRTC : public IORTC {
+    OSDeclareDefaultStructors(RMXQemuRTC);
+    RMXQemuPlatform *platform=nullptr;
+public:
+    bool start(IOService *provider) override;
+    long getGMTTimeOfDay(void) override;
+    void setGMTTimeOfDay(long seconds) override;
+    void setAlarmEnable(IOOptionBits message) override;
+};
+OSDefineMetaClassAndStructors(RMXQemuRTC,IORTC);
+bool RMXQemuRTC::start(IOService *provider)
+{
+    platform=OSDynamicCast(RMXQemuPlatform,provider);
+    if (!platform || !IORTC::start(provider)) { return false; }
+    clock_sec_t seconds; clock_nsec_t fraction;
+    getUTCTimeOfDay(&seconds,&fraction);
+    if (fraction || seconds>UINT32_MAX) { panic("QEMU RTC: invalid seconds-resolution calendar"); }
+    registerService();
+    IOService::publishResource("IORTC",this);
+    return true;
+}
+long RMXQemuRTC::getGMTTimeOfDay(void) { return platform->getGMTTimeOfDay(); }
+void RMXQemuRTC::setGMTTimeOfDay(long seconds) { platform->setGMTTimeOfDay(seconds); }
+void RMXQemuRTC::setAlarmEnable(IOOptionBits message)
+{
+    (void)message;
+    panic("QEMU RTC: alarm/power transition unsupported");
+}
+static bool publish_qemu_rtc(IOService *provider)
+{
+    RMXQemuRTC *rtc=new RMXQemuRTC;
+    if (!rtc) { return false; }
+    if (!rtc->init() || !rtc->attach(provider)) { rtc->release(); return false; }
+    bool started=rtc->start(provider);
+    if (!started) { rtc->detach(provider); }
+    rtc->release();
+    return started;
+}

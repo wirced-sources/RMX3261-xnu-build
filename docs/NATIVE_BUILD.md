@@ -247,6 +247,21 @@ CPU-on, IOMMU, power and storage are unsupported. Native compilation/execution
 of this new Platform Expert are pending; the local C++ probe requires the real
 native exported SDK/header context and is not replaced with header facades.
 
+Run39812929454 subsequently linked and executed that Platform Expert twice:
+its real start/configure returned, three nubs/four MMIO ranges were published,
+PL031 ID and counter advance passed. Both security pointer/table VA mappings
+were measured read-only/NX after stock lockdown. Execution then waited before
+an observed bsd_autoconf; no panic. Stock IOKitInitializeTime waits for resource
+IORTC, which the initial backend had not published. The follow-up provides a
+real typed IORTC subclass delegating reads/writes to that verified PL031, and
+publishes readiness only after a successful calendar read. Alarm/power requests
+remain explicit unsupported failures. Added time/buffer/BSD trace boundaries.
+
+The trace also checks restored entry SP before accepting a function return and
+does not install return breakpoints for the two nonreturning bootstrap routines.
+A shared Call_continuation PC in the initial trace belonged to another thread;
+it is not evidence that kernel_bootstrap_thread completed.
+
 Run39805659988 acquired its runner and passed allocator/compiler, crypto/verifier
 and generated-header/dependency gates. Full kernel compilation stopped at the
 Image4 log forwarder: -Wformat-nonliteral required its own printf-style attribute.

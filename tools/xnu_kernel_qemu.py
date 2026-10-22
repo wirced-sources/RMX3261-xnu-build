@@ -508,10 +508,12 @@ def execute(kernel, record, out, qemu, clang):
                      '_vm_set_restrictions','_OSKextRemoveKextBootstrap',
                      '_bsd_autoconf','_IOKitBSDInit','_IOFindBSDRoot','_vfs_mountroot','_vfsinit',
                      '_kminit','_bsd_init_task',
+                     '_IOKitInitializeTime','_clock_initialize_calendar','_bsd_bufferinit','_kauth_init',
                      '__ZN15RMXQemuPlatform5startEP9IOService',
                      '__ZN15RMXQemuPlatform9configureEP9IOService',
                      '_kmem_crypto_init','_Assert','_panic')
             boundaries = {sym[n]:n for n in names if n in sym}
+            return_sp={}
             for address in boundaries:
                 if rsp.command(f'Z1,{address:x},4') != 'OK':
                     raise RuntimeError('QEMU init-boundary breakpoint unavailable')
@@ -530,6 +532,12 @@ def execute(kernel, record, out, qemu, clang):
                     result['bounded_run_timeout'] = True
                 regs = rsp.registers()
                 name = boundaries.get(int(regs['pc'],16),'other stop')
+                if name.startswith('return:') and int(regs['sp'],16)!=return_sp.get(int(regs['pc'],16)):
+                    result.setdefault('foreign_return_addresses_ignored',[]).append(
+                        dict(function=name[7:],expected_sp=hex(return_sp.get(int(regs['pc'],16),0)),**control_registers(regs)))
+                    rsp.command(f'z1,{int(regs["pc"],16):x},4')
+                    boundaries.pop(int(regs['pc'],16),None)
+                    continue
                 result['stops'].append({'boundary':name,**control_registers(regs)})
                 if name.startswith('return:'):
                     result['returned_init_functions'].append(name[7:])
@@ -664,12 +672,13 @@ def execute(kernel, record, out, qemu, clang):
                     # address for the next function rather than retaining a
                     # stale return name after its hardware breakpoint is gone.
                     boundaries.pop(int(regs['pc'],16),None)
-                elif name != '_kernel_bootstrap':
+                elif name not in ('_kernel_bootstrap','_kernel_bootstrap_thread'):
                     # A function entry does not prove initialization completed.
                     # Observe its real caller return address without changing LR.
                     address = int(regs['lr'],16)
                     if address not in boundaries:
                         boundaries[address] = 'return:'+name
+                        return_sp[address]=int(regs['sp'],16)
                         if rsp.command(f'Z1,{address:x},4') != 'OK':
                             raise RuntimeError('QEMU init-return breakpoint unavailable')
             if runtime_requested and not result.get('kernel_runtime_tests_passed'):
