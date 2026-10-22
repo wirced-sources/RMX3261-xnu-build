@@ -102,8 +102,21 @@ make install and executed genuine arm_init instructions in QEMU. After the
 physmap fix, run39682365345 observed genuine returns from pmap_bootstrap,
 arm_vm_init, zone_bootstrap, vm_mem_bootstrap, sched_init and ipc_init, reaching
 kernel_bootstrap and then a progress-UI assertion in PE_init_iokit. The headless
-QEMU profile uses the original UI-only -noprogress boot argument. These are
-completed early initializer paths, not a completed OS boot or working iOS.
+QEMU profile uses the original UI-only -noprogress boot argument. Runs39684378294
+and39686543379 passed that UI assertion and repeated all six initializer returns.
+The latter localized a real data abort at _kmem_crypto_init+0x24 (x0=0), called
+by _kernel_startup_initialize_upto+0xb4. The source requires a registered crypto
+provider before this EARLY_BOOT callback; none has been supplied. A fake RNG
+or bypass is not an acceptable substitute. These are completed early initializer
+paths, not a completed OS boot or working iOS.
+Both independent native builds produced identical19636296-byte kernels with
+SHA2566629790e7644510fb78871359d82b4df9151571e973c63d736a5ef03e5b667bb
+using upstream ZERO_AR_DATE. Reproducibility across other environments is untested.
+The run20 panic decoder incorrectly packed two uint32 variadic arguments into one
+slot: Darwin uses eight-byte slots. PC/LR and the first registers are unaffected;
+ESR is recoverable as0x96000005, but FAR was outside its320-byte read. The local
+decoder now reads336 bytes and three64-bit slots; its next native CI execution
+is deliberately pending because the user requested saving and stopping.
 The board uses full16KB L1 (47-bit VA) to cover the
 stock MacOSX ARM_LARGE_MEMORY link address; subpage L1 only covers39 bits.
 Unavailable Apple-only PMU/IOMMU interfaces are removed from explicit export

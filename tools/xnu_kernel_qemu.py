@@ -13,6 +13,7 @@ import socket
 import struct
 import subprocess
 import time
+import xml.etree.ElementTree as ET
 
 from fdt import FDT
 from macho_kernel import audit, mapping, bootstrap_coverage
@@ -190,6 +191,95 @@ class RSP:
         indices = [(f'x{i}',i) for i in range(6)] + [('x12',12),('lr',30),('sp',31),('pc',32)]
         return {name: hex(struct.unpack_from('<Q', data, i*8)[0]) for name,i in indices}
 
+    def system_registers(self):
+        """Read advertised register numbers, never assume a QEMU register ABI."""
+        self.command('qSupported:qXfer:features:read+')
+        pending, seen, regs, nextnum = ['target.xml'], set(), {}, 0
+        while pending:
+            name = pending.pop(0)
+            if name in seen:
+                continue
+            seen.add(name)
+            xml, offset = '', 0
+            while True:
+                packet = self.command(f'qXfer:features:read:{name}:{offset:x},1000')
+                if not packet or packet[0] not in 'ml':
+                    raise ValueError('QEMU target XML unavailable')
+                xml += packet[1:]
+                offset += len(packet)-1
+                if offset > 256*1024:
+                    raise ValueError('QEMU target XML exceeds bound')
+                if packet[0] == 'l':
+                    break
+            root = ET.fromstring(xml)
+            for child in root.iter():
+                if child.tag.endswith('include'):
+                    pending.append(child.attrib['href'])
+                elif child.tag == 'reg':
+                    number = int(child.attrib.get('regnum',nextnum))
+                    nextnum = number+1
+                    key = child.attrib['name'].upper()
+                    if key in ('TTBR0_EL1','TTBR1_EL1','TCR_EL1','SCTLR_EL1','MAIR_EL1'):
+                        value = bytes.fromhex(self.command(f'p{number:x}'))
+                        if len(value) != 8:
+                            raise ValueError('short QEMU system register')
+                        regs[key] = hex(int.from_bytes(value,'little'))
+        return regs
+
+
+def inspect_mapping(rsp, address, system):
+    """Read-only 16KB/full-L1 EL1 table walk for this exact QEMU profile."""
+    tcr = int(system['TCR_EL1'],16)
+    high = address >> 63
+    granule = (tcr >> (30 if high else 14)) & 3
+    size = (tcr >> (16 if high else 0)) & 63
+    if granule != (1 if high else 2) or size != 17:
+        return {'scope':'unsupported address/TCR for this bounded table walker'}
+    table = int(system['TTBR1_EL1' if high else 'TTBR0_EL1'],16) & 0x0000ffffffffc000
+    result = {'va':hex(address),'descriptors':[]}
+    if rsp.command('Qqemu.PhyMemMode:1') != 'OK':
+        raise RuntimeError('QEMU physical read mode unavailable')
+    try:
+        for level,shift in ((1,36),(2,25),(3,14)):
+            entry = table+8*((address >> shift) & 2047)
+            raw = bytes.fromhex(rsp.command(f'm{entry:x},8'))
+            value = int.from_bytes(raw,'little')
+            result['descriptors'].append({'level':level,'pa':hex(entry),'value':hex(value)})
+            if not value & 1:
+                result['valid'] = False
+                break
+            if level == 3 or value & 3 == 1:
+                result.update(valid=True,pa=hex((value & 0x0000ffffffffc000 & -(1<<shift)) | (address & ((1<<shift)-1))),
+                    access_flag=bool(value & (1<<10)),read_only=bool(value & (1<<7)),
+                    privileged_execute_never=bool(value & (1<<53)))
+                break
+            table = value & 0x0000ffffffffc000
+    finally:
+        if rsp.command('Qqemu.PhyMemMode:0') != 'OK':
+            raise RuntimeError('QEMU virtual read mode not restored')
+    return result
+
+
+def inspect_crypto(rsp, sym, result):
+    """Only callback addresses/flags, never RNG contexts, seeds or output."""
+    record = {}
+    for name,size in (('_g_crypto_funcs',8),('_crypto_init',1)):
+        if name in sym:
+            value = int.from_bytes(bytes.fromhex(rsp.command(f'm{sym[name]:x},{size:x}')),'little')
+            record[name] = {'address':hex(sym[name]),'value':hex(value)}
+    pointer = int(record.get('_g_crypto_funcs',{}).get('value','0'),16)
+    if pointer:
+        # register_crypto.h: four Random callbacks after40 preceding pointers.
+        words = bytes.fromhex(rsp.command(f'm{pointer+40*8:x},20'))
+        record['random_callbacks'] = [hex(v) for v in struct.unpack('<4Q',words)]
+    try:
+        record['system_registers'] = rsp.system_registers()
+        if '_g_crypto_funcs' in sym:
+            record['table_pointer_mapping'] = inspect_mapping(rsp,sym['_g_crypto_funcs'],record['system_registers'])
+    except (ValueError,RuntimeError,KeyError,ET.ParseError) as error:
+        record['mapping_inspection_error'] = str(error)
+    result.setdefault('crypto_registration_observations',[]).append(record)
+
 
 def execute(kernel, record, out, qemu, clang):
     data = kernel.read_bytes()
@@ -308,7 +398,8 @@ def execute(kernel, record, out, qemu, clang):
             # Do not describe a reached function boundary as a working subsystem.
             names = ('_arm_vm_init','_pmap_bootstrap','_kernel_bootstrap','_vm_mem_bootstrap',
                      '_vm_mem_init','_zone_bootstrap','_kmem_bootstrap','_ipc_bootstrap',
-                     '_ipc_init','_sched_init','_bsd_init','_Assert','_panic')
+                     '_ipc_init','_sched_init','_bsd_init','_register_crypto_functions',
+                     '_kmem_crypto_init','_Assert','_panic')
             boundaries = {sym[n]:n for n in names if n in sym}
             for address in boundaries:
                 if rsp.command(f'Z1,{address:x},4') != 'OK':
@@ -329,6 +420,8 @@ def execute(kernel, record, out, qemu, clang):
                 regs = rsp.registers()
                 name = boundaries.get(int(regs['pc'],16),'other stop')
                 result['stops'].append({'boundary':name,**regs})
+                if name in ('_kmem_crypto_init','_register_crypto_functions'):
+                    inspect_crypto(rsp,sym,result)
                 if name == '_Assert':
                     result['assertion_reached'] = True
                     result['assertion_file'] = image_cstring(data,report['segments'],int(regs['x0'],16))
@@ -350,21 +443,42 @@ def execute(kernel, record, out, qemu, clang):
                     # export source strings and numeric words, not a raw dump.
                     try:
                         fault = bool(panic_format and panic_format.startswith('%s at pc '))
-                        length = 320 if fault else 64
+                        length = 336 if fault else 64
                         block = bytes.fromhex(rsp.command(f'm{int(regs["sp"],16):x},{length:x}'))
                         values = struct.unpack('<8Q',block[:64])
                         result['panic_stack_argument_words'] = [hex(v) for v in values]
                         result['panic_stack_source_strings'] = [image_cstring(data,report['segments'],v) for v in values]
                         if fault:
                             # Exact panic_with_thread_kernel_state argument order
-                            # in pinned sleh.c. Darwin packs the final two u32s.
+                            # in pinned sleh.c. Darwin variadic arguments use
+                            # eight-byte slots even for these two u32 values.
                             state = struct.unpack_from('<38Q',block)
-                            cpsr,esr,far = struct.unpack_from('<IIQ',block,304)
+                            cpsr,esr,far = struct.unpack_from('<QQQ',block,304)
+                            cpsr,esr = cpsr & 0xffffffff,esr & 0xffffffff
                             if state[1] != state[37] or state[2] != state[35]:
                                 raise ValueError('saved-state panic ABI mismatch')
                             result['kernel_fault'] = dict(pc=hex(state[1]),lr=hex(state[2]),
                                 sp=hex(state[36]),cpsr=hex(cpsr),esr=hex(esr),far=hex(far),
                                 **{f'x{i}':hex(state[5+i]) for i in range(6)})
+                            pc = state[1]
+                            owner = next(s for s in report['segments'] if s['vmaddr'] <= pc < s['vmaddr']+s['filesize'])
+                            off = owner['fileoff']+pc-owner['vmaddr']
+                            word = struct.unpack_from('<I',data,off)[0]
+                            guest = bytes.fromhex(rsp.command(f'm{pc:x},4'))
+                            result['fault_instruction'] = {'word':hex(word),'matches_audited_image':guest == data[off:off+4]}
+                            if word & 0xffc00000 == 0xf9400000:
+                                base = (word >> 5) & 31
+                                registers = [*state[5:34],state[34],state[35],state[36]]
+                                effective = (registers[base]+8*((word >> 10) & 4095)) & ((1<<64)-1)
+                                result['fault_instruction'].update(mnemonic='LDR X, [Xn, #imm]',
+                                    base_register=base,base_value=hex(registers[base]),
+                                    destination_register=word & 31,effective_address=hex(effective),
+                                    matches_far=effective == far)
+                            inspect_crypto(rsp,sym,result)
+                            system = result['crypto_registration_observations'][-1].get('system_registers',{})
+                            if system:
+                                result['fault_pc_mapping'] = inspect_mapping(rsp,pc,system)
+                                result['fault_address_mapping'] = inspect_mapping(rsp,far,system)
                     except (ValueError,RuntimeError) as error:
                         result['panic_argument_decode_error'] = str(error)
                 if name in ('_Assert','_panic','other stop'):
