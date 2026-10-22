@@ -308,6 +308,16 @@ The pinned XNU libkern include root selects its namespaced kernel zlib before
 the SDK's user zlib. All warnings/type checks stay enabled. No kernel was linked
 and no QEMU execution occurred for that failed attempt.
 
+Run39827200491 removed those conversion/prototype errors, leaving a mixed
+public/private framework header diagnostic, user-zlib CRC collision, and one
+remaining integer user-address NULL. The next attempt restores the normal
+native XNU export roots for provider private types. Its prefix includes the
+actual SDK string.h by absolute verified SDK path and the actual namespaced XNU
+libkern/zlib.h before later includes. Prerequisite native type headers are explicit;
+no framework-privacy warning is disabled and no substitute header is generated.
+The remaining user-address sentinel is integer zero. Fresh preparation verifies
+all exact source edits before CI publication.
+
 Run39805659988 acquired its runner and passed allocator/compiler, crypto/verifier
 and generated-header/dependency gates. Full kernel compilation stopped at the
 Image4 log forwarder: -Wformat-nonliteral required its own printf-style attribute.

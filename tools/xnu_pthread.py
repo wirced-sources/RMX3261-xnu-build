@@ -5,6 +5,7 @@ four module-private names are isolated to avoid collisions with XNU core.
 """
 from pathlib import Path
 import shutil
+import shlex
 
 def install(source, xnu):
     source,xnu=Path(source),Path(xnu)
@@ -22,6 +23,7 @@ def install(source, xnu):
             '#include <kern/debug.h> /* Real noreturn prototype and decorated panic macro. */')
     correct('kern/kern_support.c','*kevent_list_out = NULL;','*kevent_list_out = 0;')
     correct('kern/kern_support.c','user_addr_t kevent_list = NULL;','user_addr_t kevent_list = 0;',count=2)
+    correct('kern/kern_support.c','workq_kevent(p, &th_addrs, NULL, 0,','workq_kevent(p, &th_addrs, 0, 0,')
     correct('kern/kern_support.c','\t\t\t\t\t\tqos.qos_tier, 0, 0);',
             '\t\t\t\t\t\t(thread_qos_t)qos.qos_tier, 0, 0);')
     correct('kern/kern_support.c','if (kr == KERN_SUCCESS) {\n\t\t\t\tdata.main_qos',
@@ -44,6 +46,10 @@ def install(source, xnu):
 #define current_uthread ums512_pthread_current_uthread
 #define pthread_start ums512_pthread_start
 #define pthread_stop ums512_pthread_stop
+#include <kern/kern_types.h>
+#include <kern/kcdata.h>
+#include <sys/kernel_types.h>
+#include <libkern/zlib.h>
 '''
     for unit in ('init','support','synch'):
         (target/f'pthread_vendor_{unit}.c').write_text(prefix+f'#include "vendor/kern/kern_{unit}.c"\n'+
@@ -58,16 +64,14 @@ def flags(xnu, sdk, exported):
     """Use upstream per-object flags; do not shadow headers for other XNU units."""
     vendor=Path(xnu)/'bsd/ums512_pthread/vendor'
     # CFLAGS_ADD precedes native INCFLAGS. Raw OSFMK export roots contain a
-    # standalone string.h expecting libsa/types.h; a kext must use real SDK
-    # and freshly installed Kernel.framework headers instead. Only these three
-    # units get this order; no compatibility/type facade is generated.
-    framework=Path('System/Library/Frameworks/Kernel.framework')
-    # Kernel zlib is namespaced (z_crc32); the SDK user zlib conflicts with
-    # kernel crc32. Select the genuine pinned XNU libkern header first.
+    # standalone string.h expecting libsa/types.h. Use a genuine SDK string
+    # prefix with the original private native exports, not mixed frameworks.
+    # Only these three units get this context; no type facade is generated.
+    # Keep the normal native export roots for private types. A genuine SDK
+    # string prefix prevents the legacy standalone OSFMK string.h from being
+    # selected. Include real kernel zlib first in the source prefix as well.
     paths=[Path(xnu)/'libkern']
-    paths += [Path(exported)/framework/p for p in ('PrivateHeaders','Headers')]
-    paths += [Path(sdk)/framework/p for p in ('PrivateHeaders','Headers')]
     paths += [vendor/p for p in ('.','private','include')]
-    paths += [Path(sdk)/'usr/include']
-    return [f'pthread_vendor_{unit}.o_CFLAGS_ADD='+' '.join('-I'+str(p) for p in paths)
+    prefix='-include '+shlex.quote(str(Path(sdk)/'usr/include/string.h'))+' '
+    return [f'pthread_vendor_{unit}.o_CFLAGS_ADD='+prefix+' '.join('-I'+shlex.quote(str(p)) for p in paths)
             for unit in ('init','support','synch')]
