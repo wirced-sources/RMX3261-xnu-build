@@ -14,17 +14,35 @@
  	bsd_init_kprintf("calling pshm_cache_init\n");
 --- a/bsd/sys/pthread_internal.h
 +++ b/bsd/sys/pthread_internal.h
-@@ -34,7 +34,13 @@
+@@ -32,6 +32,23 @@
+ #include <sys/user.h>
+ #include <kern/thread_call.h>
  
++#if UMS512 && __LP64__
++/* Exact Apple libpthread514.100.2 record; preserve pointer metadata as well
++ * as56-byte size/alignment8. Whole-kernel uthread/generated offsets rebuild. */
++#include <mach/mach_types.h>
++#include <sys/queue.h>
++struct ksyn_waitq_element {
++	TAILQ_ENTRY(ksyn_waitq_element) kwe_list;	/* link to other list members */
++	void *          kwe_kwqqueue;			/* queue blocked on */
++	thread_t        kwe_thread;
++	uint16_t        kwe_state;			/* state */
++	uint16_t        kwe_flags;
++	uint32_t        kwe_lockseq;			/* the sequence of the entry */
++	uint32_t	kwe_count;			/* upper bound on number of matches still pending */
++	uint32_t	kwe_psynchretval;		/* thread retval */
++	void		*kwe_uth;			/* uthread */
++};
++#else
  struct ksyn_waitq_element {
  #if __LP64__
-+#if UMS512
-+	/* Pinned libpthread514.100.2: seven pointer-aligned ARM64 granules.
-+	 * Whole-kernel uthread layout and generated offsets are rebuilt together. */
-+	uint64_t opaque[7];
-+#else
  	char opaque[48];
-+#endif
- #else
+@@ -39,6 +56,7 @@
  	char opaque[32];
  #endif
+ };
++#endif
+ 
+ void workq_mark_exiting(struct proc *);
+ void workq_exit(struct proc *);

@@ -14,6 +14,7 @@ void ums512_pthread_register(void);
 volatile uint64_t ums512_pthread_registered;
 _Static_assert(sizeof(struct ksyn_waitq_element)==56,"native wait storage ABI");
 _Static_assert(_Alignof(struct ksyn_waitq_element)==8,"native wait storage alignment");
+_Static_assert(__builtin_offsetof(struct ksyn_waitq_element,kwe_uth)==48,"native wait element field ABI");
 
 void ums512_pthread_register(void)
 {

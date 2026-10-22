@@ -284,7 +284,8 @@ All signing/MAC guards remain. Four module-private names are isolated from core
 XNU; original kext header context is used only for those units. A real ABI mismatch
 is addressed explicitly: libpthread's ARM64 ksyn_waitq_element is56 bytes/aligned8,
 whereas this open XNU's opaque storage was48/aligned1. For this board the whole
-uthread layout is rebuilt with56/aligned8; both real provider and native storage
+uthread layout is rebuilt with the exact56-byte/aligned8 pointer-bearing record,
+preserving typed allocator pointer metadata; both real provider and native storage
 compile-time assert the same size/alignment. No function-table substitute or
 fake initializer is provided. Full native compilation/execution is pending.
 
