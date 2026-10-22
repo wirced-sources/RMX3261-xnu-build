@@ -23,6 +23,12 @@ def align(n, a=0x4000):
     return (n + a - 1) & -a
 
 
+def control_registers(registers, boot_args=False):
+    """Do not publish arbitrary GPR leftovers from cryptographic functions."""
+    fields = ('pc','lr','sp','cpsr') + (('x0',) if boot_args else ())
+    return {name:registers[name] for name in fields if name in registers}
+
+
 def image_cstring(data, segments, pointer, limit=512):
     """Only public audited-image strings, never arbitrary target memory."""
     owner = next((s for s in segments if s['vmaddr'] <= pointer < s['vmaddr']+s['filesize']),None)
@@ -382,10 +388,10 @@ def execute(kernel, record, out, qemu, clang):
             except socket.timeout:
                 conn.sendall(b'\x03')
                 rsp.receive()
-                result['stops'].append({'boundary':'timeout before arm_init',**rsp.registers()})
+                result['stops'].append({'boundary':'timeout before arm_init',**control_registers(rsp.registers())})
                 raise RuntimeError('bounded run stopped before genuine arm_init; inspect recorded PC/SP/x0')
             before = rsp.registers()
-            result['arm_init_entry'] = before
+            result['arm_init_entry'] = control_registers(before,boot_args=True)
             if int(before['pc'],16) != sym['_arm_init']:
                 raise ValueError('kernel stopped before genuine arm_init')
             if int(before['x0'],16) != va+args_pa-pa or int(before['sp'],16) % 16:
@@ -397,7 +403,7 @@ def execute(kernel, record, out, qemu, clang):
             rsp.command(f'z1,{sym["_arm_init"]:x},4')
             for _ in range(8):
                 rsp.command('s')
-                result['stops'].append(rsp.registers())
+                result['stops'].append(control_registers(rsp.registers()))
             # The first genuine C prologue instruction must retire sequentially;
             # jumping into an exception vector is not a successful execution proof.
             result['arm_init_executed'] = int(result['stops'][0]['pc'],16) == sym['_arm_init']+4
@@ -432,7 +438,7 @@ def execute(kernel, record, out, qemu, clang):
                     result['bounded_run_timeout'] = True
                 regs = rsp.registers()
                 name = boundaries.get(int(regs['pc'],16),'other stop')
-                result['stops'].append({'boundary':name,**regs})
+                result['stops'].append({'boundary':name,**control_registers(regs)})
                 if name == '_trust_cache_runtime_init':
                     observed = {}
                     for key in ('_img4if','_amfi'):
@@ -469,9 +475,15 @@ def execute(kernel, record, out, qemu, clang):
                     # export source strings and numeric words, not a raw dump.
                     try:
                         fault = bool(panic_format and panic_format.startswith('%s at pc '))
-                        length = 336 if fault else 64
-                        block = bytes.fromhex(rsp.command(f'm{int(regs["sp"],16):x},{length:x}'))
-                        values = struct.unpack('<8Q',block[:64])
+                        # Decode only described arguments, never unused stack
+                        # slots left by prior crypto operations. The fixed abort
+                        # ABI supplies control state; plain decorated panics
+                        # supply exactly a source filename and line number.
+                        plain = bool(panic_format and panic_format.endswith(' @%s:%d') and
+                                     '%' not in panic_format[:-len(' @%s:%d')])
+                        length = 336 if fault else 16 if plain else 0
+                        block = bytes.fromhex(rsp.command(f'm{int(regs["sp"],16):x},{length:x}')) if length else b''
+                        values = struct.unpack('<5Q',block[:40]) if fault else struct.unpack('<2Q',block) if plain else ()
                         result['panic_stack_argument_words'] = [hex(v) for v in values]
                         result['panic_stack_source_strings'] = [image_cstring(data,report['segments'],v) for v in values]
                         if fault:
@@ -484,8 +496,7 @@ def execute(kernel, record, out, qemu, clang):
                             if state[1] != state[37] or state[2] != state[35]:
                                 raise ValueError('saved-state panic ABI mismatch')
                             result['kernel_fault'] = dict(pc=hex(state[1]),lr=hex(state[2]),
-                                sp=hex(state[36]),cpsr=hex(cpsr),esr=hex(esr),far=hex(far),
-                                **{f'x{i}':hex(state[5+i]) for i in range(6)})
+                                sp=hex(state[36]),cpsr=hex(cpsr),esr=hex(esr),far=hex(far))
                             pc = state[1]
                             owner = next(s for s in report['segments'] if s['vmaddr'] <= pc < s['vmaddr']+s['filesize'])
                             off = owner['fileoff']+pc-owner['vmaddr']

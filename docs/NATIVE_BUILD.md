@@ -132,7 +132,7 @@ entry in both the aperture bound and its L1 allocation, preserving the assertion
 and page protections. The QEMU ADT includes an empty /defaults node so pmap uses
 its own default ASID count, without inventing hardware limits.
 
-## Portable crypto integration (native runtime verification pending)
+## Portable crypto integration
 
 Run39767993309 verified the old failure exactly: PC0xfffffe0007b97060,
 instruction0xf940a908 (LDR X8,[X8,#0x150]), X8=0, FAR0x150, ESR0x96000005
@@ -173,3 +173,19 @@ and the [NIST HMAC_DRBG worked example](https://csrc.nist.gov/CSRC/media/Project
 before publishing any callbacks. Passing these tests is not a security audit of
 the new adapter or proof of later kernel runtime. Live seeds/DRBG states are
 never printed by the debugger inspection.
+
+Run39773199088 subsequently BUILT/LINKED/AUDITED the19682696-byte full kernel
+(SHA256d6c556d7a418fe23b70dbf4387c22af38506d64a2eed4521d70aa53dcf772c08)
+and observed genuine returns from provider startup, register_and_init_prng,
+kmem_crypto_init and both commpage initializers. The mandatory crypto tests
+therefore passed inside XNU. Its next stop is the original Image4 guard in
+trust_cache_runtime_init. Read-only-late lockdown has not yet been reached.
+No Image4/AMFI success substitutes or signing policy changes are included.
+
+The optional real-kernel API test requires `ums512-selftest=1` and exact QEMU ADT
+model matching. It runs after the original enabling of IRQs and MAC policy setup,
+before the unchanged Image4 guard. It checks eight wired allocation/free cycles
+with zero-fill and data verification, plus private kernel-port message queue
+roundtrips using the normal send/receive/destruction paths. A small public-count
+record is read by the debugger; no message-signature checks are skipped. Native
+execution of this new hook is pending separately from the proven crypto result.
