@@ -37,8 +37,17 @@ def install(source, xnu):
         for unit in ('pthread_vendor_init','pthread_vendor_support','pthread_vendor_synch','ums512_pthread'):
             stream.write(f'\nbsd/ums512_pthread/{unit}.c\toptional ums512\n')
 
-def flags(xnu):
+def flags(xnu, sdk, exported):
     """Use upstream per-object flags; do not shadow headers for other XNU units."""
     vendor=Path(xnu)/'bsd/ums512_pthread/vendor'
-    return [f'pthread_vendor_{unit}.o_INCFLAGS='+' '.join('-I'+str(vendor/path) for path in ('.','private','include'))
+    # CFLAGS_ADD precedes native INCFLAGS. Raw OSFMK export roots contain a
+    # standalone string.h expecting libsa/types.h; a kext must use real SDK
+    # and freshly installed Kernel.framework headers instead. Only these three
+    # units get this order; no compatibility/type facade is generated.
+    framework=Path('System/Library/Frameworks/Kernel.framework')
+    paths=[Path(exported)/framework/p for p in ('PrivateHeaders','Headers')]
+    paths += [Path(sdk)/framework/p for p in ('PrivateHeaders','Headers')]
+    paths += [vendor/p for p in ('.','private','include')]
+    paths += [Path(sdk)/'usr/include']
+    return [f'pthread_vendor_{unit}.o_CFLAGS_ADD='+' '.join('-I'+str(p) for p in paths)
             for unit in ('init','support','synch')]

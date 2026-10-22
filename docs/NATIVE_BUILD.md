@@ -289,6 +289,15 @@ preserving typed allocator pointer metadata; both real provider and native stora
 compile-time assert the same size/alignment. No function-table substitute or
 fake initializer is provided. Full native compilation/execution is pending.
 
+The first native pthread integration attempt39822447955 failed in the four new
+units because raw OSFMK header roots captured standalone string.h/types.h, and
+the bridge lacked prerequisite kernel/BSD type includes. No Mach-O passed audit
+and QEMU was explicitly NOT RUN. The correction gives only the three provider
+units priority to the freshly exported and genuine SDK Kernel.framework headers
+and SDK usr/include, using upstream per-object CFLAGS_ADD. No SDK/header facade
+or type/warning-check removal is used. The bridge follows native shim include
+order. Subsequent workflow attempts compile XNU before preparing the QEMU host.
+
 Run39805659988 acquired its runner and passed allocator/compiler, crypto/verifier
 and generated-header/dependency gates. Full kernel compilation stopped at the
 Image4 log forwarder: -Wformat-nonliteral required its own printf-style attribute.

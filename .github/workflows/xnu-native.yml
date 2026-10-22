@@ -18,13 +18,19 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+      - name: Build original XNU with Apple tools
+        run: python3 tools/xnu_native.py --fetch --build
       - name: Prepare pinned QEMU host
+        if: always()
         env:
           HOMEBREW_NO_AUTO_UPDATE: 1
           HOMEBREW_NO_ANALYTICS: 1
-        run: python3 tools/qemu_host.py
-      - name: Build original XNU with Apple tools
-        run: python3 tools/xnu_native.py --fetch --build
+        run: |
+          if [ -f out/native/report/kernel-audit.json ]; then
+            python3 tools/qemu_host.py
+          else
+            echo 'QEMU host NOT BUILT: native kernel has not passed its strict audit'
+          fi
       - name: Execute the audited native kernel in QEMU
         if: always()
         env:

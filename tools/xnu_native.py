@@ -419,7 +419,7 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
               # with command generation. It must not be set for a real build.
               "CONCISE=0", "VERBOSE=NO"]
     from xnu_pthread import flags as pthread_flags
-    native.extend(pthread_flags(src))
+    native.extend(pthread_flags(src,sdk,fake))
     run(["make", "installhdrs", "-j2", *native], "xnu-headers", report, env, src)
     xbuild("Libsystem", "installhdrs", ["FAKEROOT_DIR=" + str(fake)])
     run(["xcodebuild", "installhdrs", "-sdk", "macosx", "-jobs", "2", "ARCHS=arm64", "VALID_ARCHS=arm64",

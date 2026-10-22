@@ -1,8 +1,12 @@
 /* SPDX-License-Identifier: MIT. Genuine monolithic libpthread registration. */
 #include <stdint.h>
-#include <string.h>
 #include <mach/kmod.h>
+#include <kern/thread.h>
+#include <kern/task.h>
 #include <kern/debug.h>
+#include <sys/param.h>
+#include <sys/proc_internal.h>
+#include <libkern/libkern.h>
 #include <sys/pthread_shims.h>
 #include <sys/pthread_internal.h>
 #include <pexpert/device_tree.h>
@@ -28,7 +32,8 @@ void ums512_pthread_register(void)
     if (ums512_pthread_registered || pthread_functions) { panic("QEMU pthread: duplicate registration"); }
     if (ums512_pthread_start(NULL,NULL)!=KERN_SUCCESS ||
         pthread_functions!=&pthread_internal_functions || !ums512_pthread_callbacks ||
-        ums512_pthread_callbacks!=pthread_kern || !pthread_functions->pthread_init ||
+        ums512_pthread_callbacks!=pthread_kern || ums512_pthread_callbacks->version!=1 ||
+        !pthread_functions->pthread_init ||
         !pthread_functions->psynch_mutexwait || !pthread_functions->psynch_mutexdrop ||
         !pthread_functions->workq_setup_thread || !pthread_functions->workq_handle_stack_events ||
         pthread_functions->version>PTHREAD_FUNCTIONS_TABLE_VERSION) {
