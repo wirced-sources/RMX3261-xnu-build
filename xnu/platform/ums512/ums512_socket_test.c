@@ -23,7 +23,7 @@ struct ums512_bsd_socket_proof {
 volatile struct ums512_bsd_socket_proof ums512_bsd_socket_proof;
 _Static_assert(sizeof(struct ums512_bsd_socket_proof)==64,"BSD socket proof ABI");
 
-static void socket_failure(int error)
+static __attribute__((noreturn)) void socket_failure(int error)
 {
     panic("QEMU BSD socket test phase %llu error %d",ums512_bsd_socket_proof.phase,error);
 }
