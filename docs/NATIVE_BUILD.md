@@ -318,6 +318,15 @@ no framework-privacy warning is disabled and no substitute header is generated.
 The remaining user-address sentinel is integer zero. Fresh preparation verifies
 all exact source edits before CI publication.
 
+Run39829296012 rejected the SDK libc prefix because its dependent libc headers
+are absent from native kernel include roots. The next correction uses the
+original XNU string.h BSD sys/types.h branch instead: MACH_KERNEL_PRIVATE is
+restored immediately after that include, while XNU_KERNEL_PRIVATE stays1.
+Compile-time guards require XNU's actual fortify header. Real exported kext
+headers provide opaque private API types; native Mach architecture exports
+precede SDK framework fallbacks, preventing mixed framework leaf headers.
+No warning, fortify, allocator or security option is disabled.
+
 Run39805659988 acquired its runner and passed allocator/compiler, crypto/verifier
 and generated-header/dependency gates. Full kernel compilation stopped at the
 Image4 log forwarder: -Wformat-nonliteral required its own printf-style attribute.

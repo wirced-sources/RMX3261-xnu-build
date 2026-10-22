@@ -38,6 +38,14 @@ def install(source, xnu):
 #undef BSD_KERNEL_PRIVATE
 #undef MACH_KERNEL
 #define XNU_KERNEL_PRIVATE 1
+#undef MACH_KERNEL_PRIVATE
+#include <string.h> /* Original XNU BSD types and strict fortify checks. */
+#ifndef XNU_USE_CHK_BUILTIN
+#error Genuine XNU string fortify header is required
+#endif
+#if !XNU_KERNEL_PRIVATE
+#error XNU private bounds checks must remain enabled
+#endif
 #define MACH_KERNEL_PRIVATE 1
 #define ABSOLUTETIME_SCALAR_TYPE 1
 #define NEEDS_SCHED_CALL_T 1
@@ -64,14 +72,15 @@ def flags(xnu, sdk, exported):
     """Use upstream per-object flags; do not shadow headers for other XNU units."""
     vendor=Path(xnu)/'bsd/ums512_pthread/vendor'
     # CFLAGS_ADD precedes native INCFLAGS. Raw OSFMK export roots contain a
-    # standalone string.h expecting libsa/types.h. Use a genuine SDK string
-    # prefix with the original private native exports, not mixed frameworks.
-    # Only these three units get this context; no type facade is generated.
-    # Keep the normal native export roots for private types. A genuine SDK
-    # string prefix prevents the legacy standalone OSFMK string.h from being
-    # selected. Include real kernel zlib first in the source prefix as well.
+    # Use actual exported kext headers for opaque private types. Resolve Mach
+    # architecture leaves from native exports before SDK framework fallbacks,
+    # avoiding mixed public/private framework namespaces. XNU string's prefix
+    # keeps its BSD types and strict fortify checks, with no SDK libc override.
+    framework=Path('System/Library/Frameworks/Kernel.framework')
     paths=[Path(xnu)/'libkern']
+    paths += [Path(exported)/framework/p for p in ('PrivateHeaders','Headers')]
+    paths += [Path(xnu).parent/'xnu.obj/EXPORT_HDRS/osfmk',Path(xnu)/'osfmk']
+    paths += [Path(sdk)/framework/p for p in ('PrivateHeaders','Headers')]
     paths += [vendor/p for p in ('.','private','include')]
-    prefix='-include '+shlex.quote(str(Path(sdk)/'usr/include/string.h'))+' '
-    return [f'pthread_vendor_{unit}.o_CFLAGS_ADD='+prefix+' '.join('-I'+shlex.quote(str(p)) for p in paths)
+    return [f'pthread_vendor_{unit}.o_CFLAGS_ADD='+' '.join('-I'+shlex.quote(str(p)) for p in paths)
             for unit in ('init','support','synch')]
