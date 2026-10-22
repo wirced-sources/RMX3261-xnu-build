@@ -20,8 +20,9 @@
 
 /* Architectural GICv3 register encodings, matching Arm IHI0069 and upstream
  * pexpert/arm64/VMAPPLE.h. These are offsets, not UMS512 MMIO bases. They allow
- * the original PE source to compile. Its Group0/FIQ policy is NOT a working
- * UMS512 Group1NS backend and remains a runtime integration blocker.
+ * historical component probes to compile. The native UMS512 build excludes
+ * that Group0 route and uses ums512_gic.c for QEMU Group1NS. Physical firmware
+ * security/redistributor state is still unverified and is refused by that code.
  */
 #define GIC_SPURIOUS_IRQ 1023
 #define GICR_PE_SIZE 0x20000
@@ -35,5 +36,5 @@
 #define GICR_TYPER_LAST 0x10
 #define GICR_WAKER_PROCESSORSLEEP 0x2
 #define GICR_WAKER_CHILDRENASLEEP 0x4
-#define ICC_CTLR_EOIMODE 0x1
+#define ICC_CTLR_EOIMODE 0x2 /* ICC_CTLR_EL1.EOImode, architectural bit1. */
 #define ICC_SRE_SRE 0x1

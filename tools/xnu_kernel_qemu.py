@@ -23,6 +23,28 @@ def align(n, a=0x4000):
     return (n + a - 1) & -a
 
 
+def virtual_timer_binding(tree):
+    """Validate the actual QEMU timer's interrupt-parent/specifier before boot."""
+    timers=[n for n in tree.nodes.values() if 'arm,armv8-timer' in n.strings('compatible')]
+    gics=[n for n in tree.nodes.values() if 'arm,gic-v3' in n.strings('compatible')]
+    if len(timers)!=1 or len(gics)!=1 or gics[0].cells('#interrupt-cells')!=[3]:
+        raise ValueError('QEMU architectural timer/GIC binding unavailable')
+    handle=gics[0].cells('phandle',[])
+    if len(handle)!=1 or handle[0] in (0,0xffffffff):
+        raise ValueError('QEMU GIC interrupt phandle unavailable')
+    current=timers[0]
+    while current is not None and 'interrupt-parent' not in current.props:
+        current=current.parent
+    if current is None or current.cells('interrupt-parent')!=handle:
+        raise ValueError('QEMU timer interrupt parent differs from GIC')
+    spec=timers[0].cells('interrupts',[])
+    # arm,armv8-timer binding: secure physical, nonsecure physical, virtual,
+    # hypervisor physical, optional hypervisor virtual. PPI numbers start at16.
+    if len(spec)<12 or len(spec)%3 or spec[6:9]!=[1,11,4]:
+        raise ValueError('QEMU virtual timer is not level-high PPI27')
+    return {'intid':27,'trigger':'level-high','source':'QEMU arm,armv8-timer FDT, virtual specifier'}
+
+
 def control_registers(registers, boot_args=False):
     """Do not publish arbitrary GPR leftovers from cryptographic functions."""
     fields = ('pc','lr','sp','cpsr') + (('x0',) if boot_args else ())
@@ -315,6 +337,7 @@ def execute(kernel, record, out, qemu, clang):
     fdt_path = out/'qemu.dtb'
     subprocess.run([*base_cmd, '-machine', machine+',dumpdtb='+str(fdt_path), '-display','none'], check=True, capture_output=True, timeout=20)
     tree = FDT(fdt_path.read_bytes())
+    timer_binding=virtual_timer_binding(tree)
     memory = [tree.reg(n) for n in tree.nodes.values() if n.props.get('device_type') == b'memory\0']
     gics = [tree.reg(n) for n in tree.nodes.values() if 'arm,gic-v3' in n.strings('compatible')]
     if memory != [[(0x40000000, 0x20000000)]] or len(gics) != 1 or len(gics[0]) != 2:
@@ -371,6 +394,7 @@ def execute(kernel, record, out, qemu, clang):
     result = {'kernel_sha256':report['sha256'],'arm_init_executed':False,
               'kernel_boot_completed':False,'hardware_verified':False,'stops':[],
               'boot_arguments':command_line.decode('ascii'),
+              'virtual_timer_fdt_binding':timer_binding,
               'kernel_runtime_tests_requested':runtime_requested,
               'returned_init_functions':[]}
     try:
