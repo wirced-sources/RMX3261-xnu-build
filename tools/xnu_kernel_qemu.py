@@ -189,7 +189,10 @@ class RSP:
         if len(data) < 33*8:
             raise ValueError('short AArch64 register set')
         indices = [(f'x{i}',i) for i in range(6)] + [('x12',12),('lr',30),('sp',31),('pc',32)]
-        return {name: hex(struct.unpack_from('<Q', data, i*8)[0]) for name,i in indices}
+        result = {name: hex(struct.unpack_from('<Q', data, i*8)[0]) for name,i in indices}
+        if len(data) >= 268:
+            result['cpsr'] = hex(struct.unpack_from('<I',data,264)[0])
+        return result
 
     def system_registers(self):
         """Read advertised register numbers, never assume a QEMU register ABI."""
@@ -333,6 +336,9 @@ def execute(kernel, record, out, qemu, clang):
     # Original MacOSX progress UI requires a framebuffer. This QEMU profile is
     # headless: use its genuine UI-only boot argument, not fabricated video RAM.
     command_line = b'-noprogress'
+    runtime_requested = '_ums512_runtime_proof' in sym
+    if runtime_requested:
+        command_line += b' ums512-selftest=1'
     args[108:108+len(command_line)] = command_line
     struct.pack_into('<Q',args,728,mem)
     raw[args_pa-header_pa:args_pa-header_pa+len(args)] = args
@@ -353,6 +359,7 @@ def execute(kernel, record, out, qemu, clang):
     result = {'kernel_sha256':report['sha256'],'arm_init_executed':False,
               'kernel_boot_completed':False,'hardware_verified':False,'stops':[],
               'boot_arguments':command_line.decode('ascii'),
+              'kernel_runtime_tests_requested':runtime_requested,
               'returned_init_functions':[]}
     try:
         deadline = time.monotonic()+10
@@ -404,6 +411,7 @@ def execute(kernel, record, out, qemu, clang):
                      '_kernel_bootstrap_thread','_vm_commpage_init','_vm_commpage_text_init',
                      '_mac_policy_initmach','_trust_cache_runtime_init','_load_static_trust_cache',
                      '_machine_lockdown','_PE_lockdown_iokit',
+                     '_ums512_runtime_selftest',
                      '_kmem_crypto_init','_Assert','_panic')
             boundaries = {sym[n]:n for n in names if n in sym}
             for address in boundaries:
@@ -425,6 +433,19 @@ def execute(kernel, record, out, qemu, clang):
                 regs = rsp.registers()
                 name = boundaries.get(int(regs['pc'],16),'other stop')
                 result['stops'].append({'boundary':name,**regs})
+                if name == '_trust_cache_runtime_init':
+                    observed = {}
+                    for key in ('_img4if','_amfi'):
+                        if key in sym:
+                            value = int.from_bytes(bytes.fromhex(rsp.command(f'm{sym[key]:x},8')),'little')
+                            observed[key] = {'address':hex(sym[key]),'value':hex(value)}
+                    result['security_interface_observations'] = observed
+                if runtime_requested and name in ('return:_ums512_runtime_selftest','_panic'):
+                    values = struct.unpack('<8Q',bytes.fromhex(rsp.command(f'm{sym["_ums512_runtime_proof"]:x},40')))
+                    result['kernel_runtime_tests'] = dict(zip(
+                        ('magic','complete','phase','vm_allocations','verified_bytes','ports','message_roundtrips','reserved'),values))
+                    result['kernel_runtime_tests']['magic'] = hex(values[0])
+                    result['kernel_runtime_tests_passed'] = values[:2] == (0x524d58584e555431,1)
                 if name in ('_kmem_crypto_init','_register_crypto_functions'):
                     inspect_crypto(rsp,sym,result)
                 if name == '_Assert':
@@ -503,6 +524,8 @@ def execute(kernel, record, out, qemu, clang):
                         boundaries[address] = 'return:'+name
                         if rsp.command(f'Z1,{address:x},4') != 'OK':
                             raise RuntimeError('QEMU init-return breakpoint unavailable')
+            if runtime_requested and not result.get('kernel_runtime_tests_passed'):
+                raise RuntimeError('requested genuine kernel VM/IPC tests did not complete; inspect recorded panic/phase')
     except Exception as error:
         result['error'] = str(error)
         raise

@@ -1,0 +1,24 @@
+--- a/osfmk/kern/startup.c
++++ b/osfmk/kern/startup.c
+@@ -118,6 +118,10 @@
+ #include <machine/machine_routines.h>
+ #include <libkern/version.h>
+ #include <pexpert/device_tree.h>
++#if UMS512
++/* Opt-in QEMU tests; original security guards are unchanged. */
++extern void ums512_runtime_selftest(void);
++#endif
+ #include <sys/codesign.h>
+ #include <sys/kdebug.h>
+ #include <sys/random.h>
+@@ -732,6 +736,10 @@
+ #if CODE_SIGNING_MONITOR
+ 	kernel_bootstrap_log("provisioning_profile_init");
+ 	csm_initialize_provisioning_profiles();
++#endif
++
++#if UMS512
++	ums512_runtime_selftest();
+ #endif
+ 
+ #ifndef BCM2837

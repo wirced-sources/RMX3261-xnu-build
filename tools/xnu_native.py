@@ -42,12 +42,14 @@ PATCHES = (
     "xnu/patches-ums512/0015-remove-unavailable-pmu-exports.patch",
     "xnu/patches-ums512/0016-remove-unavailable-apple-iommu-exports.patch",
     "xnu/patches-ums512/0017-reserve-physmap-alignment-slack.patch",
+    "xnu/patches-ums512/0018-qemu-kernel-api-validation.patch",
     "xnu/patches/0005-non-pac-build-fixes.patch",
 )
 CAPSULE = (
     "tools/crypto_check.py", "tests/crypto_rng_kat.c",
     "tools/xnu_crypto.py", "xnu/platform/ums512/ums512_rng.h",
     "xnu/platform/ums512/ums512_rng.c", "xnu/platform/ums512/ums512_crypto.c",
+    "xnu/platform/ums512/ums512_runtime.c",
     "tools/xnu_native.py", "tools/xnu_config.py", "tools/macho_kernel.py", "tools/xnu_kernel_qemu.py", "tools/fdt.py", "tools/qemu_host.py", "xnu/native.lock.json",
     "xnu/sources.lock.json", "xnu/platform/ums512/UMS512.h",
     "xnu/platform/ums512/cpu_entry.h", "ci/xnu-native.yml",
@@ -164,6 +166,9 @@ def prepare(work):
     shutil.copyfile(ROOT / "xnu/platform/ums512/UMS512.h", src / "pexpert/pexpert/arm64/UMS512.h")
     (src / "osfmk/ums512").mkdir()
     shutil.copyfile(ROOT / "xnu/platform/ums512/cpu_entry.h", src / "osfmk/ums512/cpu_entry.h")
+    shutil.copyfile(ROOT / 'xnu/platform/ums512/ums512_runtime.c',src / 'osfmk/ums512/ums512_runtime.c')
+    with (src/'osfmk/conf/files').open('a',newline='\n') as config_stream:
+        config_stream.write('\nosfmk/ums512/ums512_runtime.c\toptional ums512\n')
     master = (src / "config/MASTER").read_text()
     original = (src / "config/MASTER.arm64.MacOSX").read_text()
     board = full_master(original)
