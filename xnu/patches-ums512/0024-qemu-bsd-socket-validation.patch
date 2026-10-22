@@ -1,0 +1,15 @@
+--- a/bsd/kern/bsd_init.c
++++ b/bsd/kern/bsd_init.c
+@@ -789,6 +789,12 @@
+ 	bsd_init_kprintf("calling sysctl_mib_init\n");
+ 	sysctl_mib_init();
+ 
++#if UMS512
++	/* Opt-in real AF_LOCAL operations after stock protocol initialization. */
++	extern void ums512_bsd_socket_selftest(void);
++	ums512_bsd_socket_selftest();
++#endif
++
+ 	bsd_init_kprintf("calling bsd_autoconf\n");
+ 	bsd_autoconf();
+ 

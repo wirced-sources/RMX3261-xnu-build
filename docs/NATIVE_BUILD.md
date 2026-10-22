@@ -432,3 +432,33 @@ kernel. All new runtime evidence is separate from historical cold diagnostics.
 - Real libpthread locks/hash/thread-call initializer returned in one trial;
   this does not establish working userspace psynch/syscalls or complete BSD.
   No root mount/network traffic/SMP/iOS/physical UMS512 verification. Phone untouched.
+
+
+## 2026-10-22 — real AES CBC fixes TCP; root discovery entered twice
+
+- Native43/run39837482280/job120029495186 completed SUCCESS: original full
+  make install/strict audit, 19915936 bytes,18segments,72926
+  validated local relocations,0imports,SHA2566e61a41d181c9a86af807ff26ced7715badf276225f435ce3280ce35018fce34.
+  Real arm_init0xfffffe0007bc7024 executed twice, SP0xfffffe0007d0c000,
+  BootArgs0xfffffe00083e8000; no observer. Native42 proofs archived separately.
+- Both boots returned real AES selftest/crypto startup (including original XNU
+  wrapper KAT), stock trust runtime and42/30/25/7 security checks, pthread
+  registration/_pthread_init, dlil_init, tcp_init, domaininit, skywalk_init and
+  sysctl_mib_init. Both entered IOFindBSDRoot0xfffffe0007b5529c and did not return
+  during bounded observation. No panic/data abort/watchdog in either new boot.
+- Both registered actual CBC descriptors: encrypt0xfffffe000723b830,
+  decrypt0xfffffe000723b858, context264bytes/block16. Early table sampling was
+  before lockdown (crypto pointer still writable then); no late crypto page
+  protection claim is inferred. Security Image4/AMFI pointers/tables were live
+  measured RO/NX after lockdown. Targeted VM/IPC/IRQ/timer/thread/RTC/UP checks pass.
+- No root storage/IOMedia/filesystem integrated. Exact internal root resource/
+  media wait has not yet been read. Idle sample is another thread, not BSD stack.
+  Original source performs IOBSD wait then media selection. No root mount,
+  filesystem I/O, packet traffic, userspace psynch/execution, SMP or iOS claimed.
+- Native43 total98 stops reached root discovery:96 startup cap did not truncate
+  this run. The earlier15sec RSP silent interval stopped idle observation before
+  the overall45sec deadline. Next harness uses full remaining deadline and
+  exports only known static root matching booleans. No timeout/protection in
+  the kernel was changed. Timing panic native42 remains historical/open.
+- Independent socket selftest and tracer refinements are implemented/prepared,
+  not target-tested. Complete local check.py91unit+8offlineQEMU PASS. Phone untouched.

@@ -369,6 +369,11 @@ def inspect_crypto(rsp, sym, result):
         record['system_registers'] = rsp.system_registers()
         if '_g_crypto_funcs' in sym:
             record['table_pointer_mapping'] = inspect_mapping(rsp,sym['_g_crypto_funcs'],record['system_registers'])
+        if pointer:
+            record['table_mapping']=inspect_mapping(rsp,pointer,record['system_registers'])
+            for mode in record.get('aes_cbc_modes',{}).values():
+                if int(mode['address'],16):
+                    mode['mapping']=inspect_mapping(rsp,int(mode['address'],16),record['system_registers'])
     except (ValueError,RuntimeError,KeyError,ET.ParseError) as error:
         record['mapping_inspection_error'] = str(error)
     result.setdefault('crypto_registration_observations',[]).append(record)
@@ -478,6 +483,7 @@ def execute(kernel, record, out, qemu, clang):
         '-gdb',f'tcp:127.0.0.1:{port}','-kernel',str(image),'-device',f'loader,file={out / "kernel.physical.bin"},addr={header_pa:#x},force-raw=on'],stdout=log,stderr=log)
     result = {'kernel_sha256':report['sha256'],'arm_init_executed':False,
               'kernel_boot_completed':False,'hardware_verified':False,'stops':[],
+              'observation_window_seconds':45,'boundary_limit':256,
               'boot_arguments':command_line.decode('ascii'),
               'virtual_timer_fdt_binding':timer_binding,'virtual_cpu_fdt_binding':cpu_binding,
               'virtual_uart_fdt_binding':uart,
@@ -545,7 +551,8 @@ def execute(kernel, record, out, qemu, clang):
                      '_mcache_init','_mbinit','_ml_wait_max_cpus','_ml_set_max_cpus',
                      '_ums512_qemu_finalize_cpu_topology','_IOMapperIOVMAlloc',
                      '_audit_init','_domaininit','_dlil_init','_skywalk_init','_sysctl_mib_init',
-                     '_tcp_init','_aes_encrypt_key128','_aes_encrypt_key','_ums512_aes_init',
+                     '_tcp_init','_aes_encrypt_key128','_aes_encrypt_key',
+                     '_ums512_bsd_socket_selftest','_loopattach','_net_init_run','_inittodr',
                      '_ums512_pthread_register','_ums512_pthread_start','_pthread_kext_register',
                      '_pthread_init','__pthread_init',
                      '__ZN15RMXQemuPlatform5startEP9IOService',
@@ -557,12 +564,12 @@ def execute(kernel, record, out, qemu, clang):
                 if rsp.command(f'Z1,{address:x},4') != 'OK':
                     raise RuntimeError('QEMU init-boundary breakpoint unavailable')
             deadline = time.monotonic()+45
-            for _ in range(96):
+            for _ in range(256):
                 remaining = deadline-time.monotonic()
                 if remaining <= 0:
                     result['bounded_run_timeout'] = True
                     break
-                conn.settimeout(min(15,remaining))
+                conn.settimeout(remaining)
                 try:
                     rsp.command('c')
                 except socket.timeout:
@@ -580,6 +587,16 @@ def execute(kernel, record, out, qemu, clang):
                 result['stops'].append({'boundary':name,**control_registers(regs)})
                 if name.startswith('return:'):
                     result['returned_init_functions'].append(name[7:])
+                if name in ('_bsd_init','_IOFindBSDRoot'):
+                    inspect_crypto(rsp,sym,result)
+                if '_ums512_bsd_socket_proof' in sym and name in ('return:_ums512_bsd_socket_selftest','_panic','_IOFindBSDRoot'):
+                    raw=bytes.fromhex(rsp.command(f'm{sym["_ums512_bsd_socket_proof"]:x},40'))
+                    result['bsd_socket_runtime']=dict(zip(('magic','complete','phase','pairs','messages',
+                        'bytes','empty_rejections','eof_checks'),struct.unpack('<8Q',raw)))
+                    result['bsd_socket_runtime_tests_passed']=result['bsd_socket_runtime']==dict(
+                        magic=0x524d584253445331,complete=1,phase=6,pairs=2,messages=12,bytes=1180,empty_rejections=4,eof_checks=1)
+                    if name=='return:_ums512_bsd_socket_selftest' and not result['bsd_socket_runtime_tests_passed']:
+                        raise RuntimeError('genuine BSD socket selftest returned without completed proof')
                 if name in ('return:_machine_lockdown','_vm_set_restrictions','_bsd_init') and '_ums512_security_proof' in sym and 'security_lockdown_mappings' not in result:
                     system=rsp.system_registers()
                     protected={}
@@ -733,6 +750,8 @@ def execute(kernel, record, out, qemu, clang):
                         return_sp[address]=int(regs['sp'],16)
                         if rsp.command(f'Z1,{address:x},4') != 'OK':
                             raise RuntimeError('QEMU init-return breakpoint unavailable')
+            else:
+                result['boundary_limit_reached']=True
             if runtime_requested and not result.get('kernel_runtime_tests_passed'):
                 raise RuntimeError('requested genuine kernel VM/IPC tests did not complete; inspect recorded panic/phase')
             if '_ums512_security_proof' in sym and not result.get('security_runtime_tests_passed'):
@@ -757,6 +776,14 @@ def execute(kernel, record, out, qemu, clang):
             proc.kill()
             proc.wait(timeout=5)
         log.close()
+        if uart and (out/'serial.log').exists():
+            serial=(out/'serial.log').read_bytes()[:1024*1024]
+            start=serial.rfind(b'Waiting on ')
+            root_matching=serial[start:start+4096] if start>=0 else b''
+            result['bsd_root_console_observations']=dict(
+                iobsd_resource_timeout=b'!BSD' in serial,root_matching_printed=start>=0,
+                root_matching_iomedia=b'IOMedia' in root_matching,
+                root_matching_apple_hfs=b'Apple_HFS' in root_matching)
         ordered = sorted((address,name) for name,address in sym.items() if address)
         from bisect import bisect_right
         for stop in [result.get('arm_init_entry',{}),result.get('kernel_fault',{}),*result['stops']]:

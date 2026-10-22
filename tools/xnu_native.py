@@ -48,6 +48,7 @@ PATCHES = (
     "xnu/patches-ums512/0021-qemu-pl011-console.patch",
     "xnu/patches-ums512/0022-qemu-platform-personality.patch",
     "xnu/patches-ums512/0023-monolithic-pthread-registration.patch",
+    "xnu/patches-ums512/0024-qemu-bsd-socket-validation.patch",
     "xnu/patches/0005-non-pac-build-fixes.patch",
 )
 CAPSULE = (
@@ -56,6 +57,7 @@ CAPSULE = (
     "xnu/platform/ums512/ums512_img4_vectors.h",
     "xnu/platform/ums512/ums512_gic.c", "xnu/platform/ums512/ums512_irq_test.c",
     "xnu/platform/ums512/ums512_sched_test.c",
+    "xnu/platform/ums512/ums512_socket_test.c",
     "xnu/platform/ums512/ums512_security.h", "xnu/platform/ums512/ums512_security.c",
     "xnu/platform/ums512/ums512_image4_runtime.c", "xnu/platform/ums512/ums512_trustcache.c",
     "xnu/platform/ums512/ums512_pl011.inc",
@@ -202,8 +204,10 @@ def prepare(work):
             config_stream.write(f'\nlibkern/ums512_img4/{name}\toptional ums512\n')
     (src/'bsd/ums512').mkdir()
     shutil.copyfile(ROOT/'xnu/platform/ums512/ums512_security.c',src/'bsd/ums512/ums512_security.c')
+    shutil.copyfile(ROOT/'xnu/platform/ums512/ums512_socket_test.c',src/'bsd/ums512/ums512_socket_test.c')
     with (src/'bsd/conf/files').open('a',newline='\n') as config_stream:
         config_stream.write('\nbsd/ums512/ums512_security.c\toptional ums512\n')
+        config_stream.write('\nbsd/ums512/ums512_socket_test.c\toptional ums512\n')
     (src / "osfmk/ums512").mkdir()
     shutil.copyfile(ROOT / "xnu/platform/ums512/cpu_entry.h", src / "osfmk/ums512/cpu_entry.h")
     shutil.copyfile(ROOT / 'xnu/platform/ums512/ums512_runtime.c',src / 'osfmk/ums512/ums512_runtime.c')
@@ -235,7 +239,7 @@ def prepare(work):
               "image4_adapters": {n:digest(ROOT/'xnu/platform/ums512'/n)
                                   for n in ('ums512_img4.h','ums512_img4.c','ums512_img4_vectors.h')},
               "crypto_adapters": {n: digest(ROOT / 'xnu/platform/ums512' / n)
-                                  for n in ('ums512_rng.h','ums512_rng.c','ums512_crypto.c')},
+                                  for n in ('ums512_rng.h','ums512_rng.c','ums512_crypto.c','ums512_aes.h','ums512_aes.c')},
               "diagnostic_observer_included": False, "kernel_linked": False, "arm_init_executed": False}
     (work / "prepared.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print("PREPARED: full ARM64 configuration; protection features preserved; unsupported KPC/kperf excluded", flush=True)
