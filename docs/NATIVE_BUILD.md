@@ -225,7 +225,27 @@ integration; a valid lab manifest does not grant code execution. Entitlement
 queries deny privileges, CoreEntitlements version0 advertises no interpreter.
 No production AMFI compatibility, entitlements or Apple boot trust are claimed.
 The stock trust_cache_runtime_init and subsequent startup calls remain intact.
-Native build and runtime evidence for this new integration are pending.
+Run39807654638 subsequently linked/audited the19836584-byte genuine kernel,
+SHA256e56496e8ad28fd61823344f5fb672fc67d2c84ef03d72435f1ba46c58b9f45f9,
+18segments/72191 validated local relocations/0 imports. Two fresh boots returned
+from stock trust_cache_runtime_init, all firmware/cache/query tests and static
+cache loading, then entered bsd_init. Actual PL011 ID/clock/divisor/ready marker
+and3835 transmitted bytes were verified per boot. The next stock panic is
+IOPanicPlatform::start: no matching QEMU platform driver. BSD is not complete.
+The individual lockdown boundary symbols were not observed (LTO); reaching BSD
+implies their stock order, while direct post-lockdown RO/NX checks are pending.
+
+The follow-up QEMU Platform Expert adds an exact-model catalogue personality
+while retaining IOPanicPlatform for unknown platforms. It creates actual IOKit
+MMIO descriptors/nubs for FDT-derived GIC, UART and RTC ranges. Its PL031 backend
+maps the real virtual peripheral, checks all eight ID bytes, masks/clears RTC
+interrupts and requires the1Hz counter to advance within a bounded wait. Calendar
+reads use the device register; writes use its load register with a32-bit bound.
+This is a seconds-resolution emulated clock, not a trusted anti-rollback clock.
+The implementation follows [QEMU9.2.4 PL031](https://github.com/qemu/qemu/blob/v9.2.4/hw/rtc/pl031.c).
+CPU-on, IOMMU, power and storage are unsupported. Native compilation/execution
+of this new Platform Expert are pending; the local C++ probe requires the real
+native exported SDK/header context and is not replaced with header facades.
 
 Run39805659988 acquired its runner and passed allocator/compiler, crypto/verifier
 and generated-header/dependency gates. Full kernel compilation stopped at the

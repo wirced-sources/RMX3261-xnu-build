@@ -65,8 +65,9 @@ static void qemu_pl011_register(vm_offset_t soc_base)
 {
     DTEntry root,entry;
     const void *model=NULL,*compatible=NULL;
-    const uint64_t *reg=NULL;
-    const uint32_t *clock=NULL;
+    const void *reg_data=NULL,*clock_data=NULL;
+    uint64_t reg[2];
+    uint32_t clock;
     unsigned length=0;
     static const char qemu[]="qemu,virt",pl011[]="arm,pl011";
     if (SecureDTLookupEntry(NULL,"/",&root)!=kSuccess ||
@@ -75,12 +76,20 @@ static void qemu_pl011_register(vm_offset_t soc_base)
     if (SecureDTLookupEntry(NULL,"/arm-io/uart0",&entry)!=kSuccess) { return; }
     if (SecureDTGetProperty(entry,"compatible",&compatible,&length)!=kSuccess ||
         length!=sizeof(pl011) || memcmp(compatible,pl011,sizeof(pl011))) { panic("QEMU PL011 incompatible ADT"); }
-    if (SecureDTGetProperty(entry,"reg",(const void **)&reg,&length)!=kSuccess || length!=16 ||
+    if (SecureDTGetProperty(entry,"reg",&reg_data,&length)!=kSuccess || length!=sizeof(reg)) {
+        panic("QEMU PL011 missing ADT range");
+    }
+    /* ADT properties are four-byte aligned; never form an unaligned u64 view. */
+    memcpy(reg,reg_data,sizeof(reg));
+    if (
         reg[1]<0x1000 || reg[1]>0x10000 || reg[0]>UINT64_MAX-soc_base ||
-        reg[1]>UINT64_MAX-(soc_base+reg[0])) { panic("QEMU PL011 invalid ADT range"); }
-    if (SecureDTGetProperty(entry,"clock-frequency",(const void **)&clock,&length)!=kSuccess ||
-        length!=4 || *clock<2000000 || *clock>200000000) { panic("QEMU PL011 missing uartclk"); }
-    qemu_pl011_clock=*clock;
+        reg[1]>UINT64_MAX-(soc_base+reg[0]) || ((soc_base+reg[0])&0xfff)) { panic("QEMU PL011 invalid ADT range"); }
+    if (SecureDTGetProperty(entry,"clock-frequency",&clock_data,&length)!=kSuccess || length!=sizeof(clock)) {
+        panic("QEMU PL011 missing uartclk");
+    }
+    memcpy(&clock,clock_data,sizeof(clock));
+    if (clock<2000000 || clock>200000000) { panic("QEMU PL011 invalid uartclk"); }
+    qemu_pl011_clock=clock;
     ums512_uart_proof.physical=soc_base+reg[0]; ums512_uart_proof.size=reg[1];
     qemu_pl011_base=ml_io_map(soc_base+reg[0],reg[1]);
     if (!qemu_pl011_base) { panic("QEMU PL011 mapping failed"); }

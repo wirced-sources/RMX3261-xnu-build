@@ -46,6 +46,7 @@ PATCHES = (
     "xnu/patches-ums512/0019-qemu-group1-irq-backend.patch",
     "xnu/patches-ums512/0020-qemu-laboratory-security-runtime.patch",
     "xnu/patches-ums512/0021-qemu-pl011-console.patch",
+    "xnu/patches-ums512/0022-qemu-platform-personality.patch",
     "xnu/patches/0005-non-pac-build-fixes.patch",
 )
 CAPSULE = (
@@ -57,6 +58,7 @@ CAPSULE = (
     "xnu/platform/ums512/ums512_security.h", "xnu/platform/ums512/ums512_security.c",
     "xnu/platform/ums512/ums512_image4_runtime.c", "xnu/platform/ums512/ums512_trustcache.c",
     "xnu/platform/ums512/ums512_pl011.inc",
+    "xnu/platform/ums512/QemuVirtPlatform.cpp",
     "tools/crypto_check.py", "tests/crypto_rng_kat.c",
     "tools/xnu_crypto.py", "xnu/platform/ums512/ums512_rng.h",
     "xnu/platform/ums512/ums512_rng.c", "xnu/platform/ums512/ums512_crypto.c",
@@ -184,6 +186,10 @@ def prepare(work):
             config_stream.write(f'\nlibkern/ums512_img4/{name}\toptional ums512\n')
     shutil.copyfile(ROOT / "xnu/platform/ums512/UMS512.h", src / "pexpert/pexpert/arm64/UMS512.h")
     shutil.copyfile(ROOT/'xnu/platform/ums512/ums512_pl011.inc',src/'pexpert/arm/ums512_pl011.inc')
+    (src/'iokit/ums512').mkdir()
+    shutil.copyfile(ROOT/'xnu/platform/ums512/QemuVirtPlatform.cpp',src/'iokit/ums512/QemuVirtPlatform.cpp')
+    with (src/'iokit/conf/files').open('a',newline='\n') as config_stream:
+        config_stream.write('\niokit/ums512/QemuVirtPlatform.cpp\toptional ums512\n')
     for name in ('ums512_image4_runtime.c','ums512_trustcache.c','ums512_security.h'):
         shutil.copyfile(ROOT/'xnu/platform/ums512'/name,src/'libkern/ums512_img4'/name)
     with (src/'libkern/conf/files').open('a',newline='\n') as config_stream:

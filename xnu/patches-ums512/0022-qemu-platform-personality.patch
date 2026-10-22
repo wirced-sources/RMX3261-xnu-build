@@ -1,0 +1,17 @@
+--- a/iokit/KernelConfigTables.cpp
++++ b/iokit/KernelConfigTables.cpp
+@@ -34,6 +34,14 @@
+ 
+ const char * gIOKernelConfigTables =
+     "("
++#if defined(ARM64_BOARD_CONFIG_UMS512)
++    "   {"
++    "     'IOClass'         = RMXQemuPlatform;"
++    "     'IOProviderClass' = IOPlatformExpertDevice;"
++    "     'IONameMatch'     = 'qemu,virt';"
++    "     'IOProbeScore'    = 1000:32;"
++    "   },"
++#endif
+     "   {"
+     "     'IOClass'         = IOPanicPlatform;"
+     "     'IOProviderClass' = IOPlatformExpertDevice;"
