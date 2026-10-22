@@ -226,5 +226,32 @@ unsigned ums512_img4_selftest(void)
         }
         count++;
     }
-    return count;
+    const struct ums_img4_case *good=&ums_img4_cases[0],*tampered=&ums_img4_cases[1];
+    static const uint8_t absent[20]={0};
+    if (ums512_img4_query(good->payload,good->payload_size,good->manifest,good->manifest_size,good->payload+24)!=UMS_IMG4_OK ||
+        ums512_img4_query(good->payload,good->payload_size,good->manifest,good->manifest_size,absent)!=UMS_IMG4_NOT_FOUND ||
+        ums512_img4_query(tampered->payload,tampered->payload_size,tampered->manifest,tampered->manifest_size,good->payload+24)==UMS_IMG4_OK) {
+#ifdef KERNEL
+        panic("UMS512 trust query selftest failed");
+#else
+        return 0;
+#endif
+    }
+    return count+3;
+}
+
+enum ums512_img4_result ums512_img4_query(const uint8_t *payload,size_t bytes,
+    const uint8_t *manifest,size_t len,const uint8_t hash[20])
+{
+    if (!hash) { return UMS_IMG4_ARGUMENT; }
+    enum ums512_img4_result result=ums512_img4_verify(payload,bytes,manifest,len);
+    if (result!=UMS_IMG4_OK) { return result; }
+    size_t low=0,high=le32(payload+20);
+    while (low<high) {
+        size_t middle=low+(high-low)/2;
+        int order=memcmp(payload+24+middle*24,hash,20);
+        if (!order) { return UMS_IMG4_OK; }
+        if (order<0) { low=middle+1; } else { high=middle; }
+    }
+    return UMS_IMG4_NOT_FOUND;
 }

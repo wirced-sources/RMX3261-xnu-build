@@ -41,7 +41,7 @@ int main(void) { unsigned n=ums512_img4_selftest();
     copy[2]=(unsigned char)(length>>8);copy[3]=(unsigned char)length;
     if (ums512_img4_verify(good->payload,good->payload_size,copy,good->manifest_size+2)==UMS_IMG4_OK) return 6;
     rejected++;
-    printf("Image4 actual verifier: %u public vectors and %u rejected mutations/truncations passed\\n",n,rejected);
+    printf("Image4 actual verifier: %u manifest/query checks and %u rejected mutations/truncations passed\\n",n,rejected);
     return 0; }
 ''')
     def path(p):

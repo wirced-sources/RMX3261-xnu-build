@@ -425,6 +425,7 @@ def execute(kernel, record, out, qemu, clang):
                      '_machine_lockdown','_PE_lockdown_iokit',
                      '_ums512_runtime_selftest',
                      '_ums512_gic_init','_sleh_irq','_rtclock_intr','_ums512_irq_selftest',
+                     '_ums512_scheduler_selftest',
                      '_kmem_crypto_init','_Assert','_panic')
             boundaries = {sym[n]:n for n in names if n in sym}
             for address in boundaries:
@@ -456,16 +457,18 @@ def execute(kernel, record, out, qemu, clang):
                 if runtime_requested and name in ('return:_ums512_runtime_selftest','_panic'):
                     for symbol,fields in (
                         ('_ums512_irq_proof',('initialized','irq_entries','timer_interrupts','timer_returns','spurious','sgi_interrupts','last_intid','distributor_control')),
-                        ('_ums512_timer_proof',('complete','callbacks','interrupt_context','earliest','observed','sgi_sent','reserved0','reserved1'))):
+                        ('_ums512_timer_proof',('complete','callbacks','interrupt_context','earliest','observed','sgi_sent','reserved0','reserved1')),
+                        ('_ums512_scheduler_proof',('complete','worker_entries','different_thread','roundtrips','timed_out','termination_requested','reserved0','reserved1'))):
                         if symbol in sym:
                             raw=bytes.fromhex(rsp.command(f'm{sym[symbol]:x},40'))
                             result[symbol[1:]]=dict(zip(fields,struct.unpack('<8Q',raw)))
                     values = struct.unpack('<8Q',bytes.fromhex(rsp.command(f'm{sym["_ums512_runtime_proof"]:x},40')))
                     result['kernel_runtime_tests'] = dict(zip(
-                        ('magic','complete','phase','vm_allocations','verified_bytes','ports','message_roundtrips','signature_vectors'),values))
+                        ('magic','complete','phase','vm_allocations','verified_bytes','ports','message_roundtrips','trust_checks'),values))
                     result['kernel_runtime_tests']['magic'] = hex(values[0])
-                    result['kernel_runtime_tests_passed'] = (values[:2] == (0x524d58584e555431,1) and values[7]==30 and
-                        result.get('ums512_timer_proof',{}).get('complete')==1)
+                    result['kernel_runtime_tests_passed'] = (values[:2] == (0x524d58584e555431,1) and values[7]==33 and
+                        result.get('ums512_timer_proof',{}).get('complete')==1 and
+                        result.get('ums512_scheduler_proof',{}).get('complete')==1)
                 if name in ('_kmem_crypto_init','_register_crypto_functions'):
                     inspect_crypto(rsp,sym,result)
                 if name == '_Assert':

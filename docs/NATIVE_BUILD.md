@@ -227,3 +227,11 @@ transition is attempted. It refuses a physical/unknown model or security state.
 The optional kernel hook queues three original timer_call deadlines and requires
 their callbacks in real masked interrupt context before timeout. This path still
 requires execution evidence; compilation alone does not verify IRQ delivery.
+The handler compiles in OSFMK because its timer dispatch uses private CPU state;
+PExpert invokes its initializer without exposing private headers. The optional
+test also sends a targeted Group1 SGI to the current CPU, then starts a genuine
+kernel thread and exchanges four semaphore handshakes. An empty semaphore wait
+must expire through the original timer/scheduler path. These are opt-in tests,
+not a replacement scheduler or an SMP implementation. The lab trust backend
+also performs authenticated CDHash queries, with unknown/unauthenticated inputs
+rejected; it still grants no execution rights or entitlements.

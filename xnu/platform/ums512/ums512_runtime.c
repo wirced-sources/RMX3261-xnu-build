@@ -19,10 +19,11 @@
 #include <libkern/section_keywords.h>
 #include "ums512_img4.h"
 void ums512_irq_selftest(void);
+void ums512_scheduler_selftest(void);
 
 struct ums512_runtime_proof {
     uint64_t magic, complete, phase, vm_allocations, verified_bytes;
-    uint64_t ports, message_roundtrips, signature_vectors;
+    uint64_t ports, message_roundtrips, trust_checks;
 };
 SECURITY_READ_ONLY_LATE(volatile struct ums512_runtime_proof) ums512_runtime_proof;
 _Static_assert(sizeof(struct ums512_runtime_proof) == 64, "debugger proof ABI");
@@ -119,9 +120,11 @@ void ums512_runtime_selftest(void)
     ums512_runtime_proof.phase=2;
     ipc_tests();
     ums512_runtime_proof.phase=3;
-    ums512_runtime_proof.signature_vectors=ums512_img4_selftest();
-    if (ums512_runtime_proof.signature_vectors!=30) { panic("UMS512 Image4 test vector count mismatch"); }
+    ums512_runtime_proof.trust_checks=ums512_img4_selftest();
+    if (ums512_runtime_proof.trust_checks!=33) { panic("UMS512 Image4 test vector count mismatch"); }
     ums512_runtime_proof.phase=4;
     ums512_irq_selftest();
+    ums512_runtime_proof.phase=5;
+    ums512_scheduler_selftest();
     ums512_runtime_proof.complete=1;
 }

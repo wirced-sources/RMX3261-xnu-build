@@ -22,6 +22,8 @@ volatile struct ums512_irq_proof ums512_irq_proof;
 static vm_offset_t distributor,redistributor;
 
 void ums512_gic_init(void);
+uint64_t ums512_gic_sgi_count(void);
+void ums512_gic_send_self_sgi(void);
 static uint32_t read32(vm_offset_t base,uint32_t offset)
 { return *(volatile uint32_t *)(base+offset); }
 static void write32(vm_offset_t base,uint32_t offset,uint32_t value)
@@ -130,4 +132,17 @@ void ums512_gic_init(void)
     __builtin_arm_wsr64("ICC_IGRPEN1_EL1",1);barrier();
     ums512_irq_proof.distributor_control=read32(distributor,0);
     ums512_irq_proof.initialized=1;
+}
+
+uint64_t ums512_gic_sgi_count(void) { return ums512_irq_proof.sgi_interrupts; }
+void ums512_gic_send_self_sgi(void)
+{
+    uint64_t mpidr=__builtin_arm_rsr64("MPIDR_EL1");
+    unsigned affinity0=(unsigned)(mpidr&255);
+    if (!ums512_irq_proof.initialized || affinity0>15) { panic("UMS512 GIC: unsupported SGI target"); }
+    uint64_t target=((mpidr>>32)&255)<<48 | ((mpidr>>16)&255)<<32 |
+                    ((mpidr>>8)&255)<<16 | (UINT64_C(1)<<affinity0);
+    barrier();
+    __builtin_arm_wsr64("ICC_SGI1R_EL1",target);
+    __asm__ volatile("isb":::"memory");
 }

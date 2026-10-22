@@ -12,6 +12,8 @@ struct ums512_timer_proof {
 volatile struct ums512_timer_proof ums512_timer_proof;
 static timer_call_data_t test_timer;
 void ums512_irq_selftest(void);
+uint64_t ums512_gic_sgi_count(void);
+void ums512_gic_send_self_sgi(void);
 
 static void callback(timer_call_param_t p0 __unused,timer_call_param_t p1 __unused)
 {
@@ -42,5 +44,13 @@ void ums512_irq_selftest(void)
         if (ums512_timer_proof.observed<deadline) { panic("UMS512 timer test: early callback"); }
     }
     if (timer_call_cancel(&test_timer)) { panic("UMS512 timer test: expired timer remained queued"); }
+    uint64_t before=ums512_gic_sgi_count(),timeout;
+    nanoseconds_to_deadline(2000000000,&timeout);
+    ums512_gic_send_self_sgi();
+    ums512_timer_proof.sgi_sent=1;
+    while (ums512_gic_sgi_count()==before) {
+        if (mach_absolute_time()>timeout) { panic("UMS512 GIC: self SGI not delivered"); }
+        __asm__ volatile("yield":::"memory");
+    }
     ums512_timer_proof.complete=1;
 }

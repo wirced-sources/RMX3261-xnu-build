@@ -51,6 +51,7 @@ CAPSULE = (
     "xnu/platform/ums512/ums512_img4.c", "xnu/platform/ums512/ums512_img4.h",
     "xnu/platform/ums512/ums512_img4_vectors.h",
     "xnu/platform/ums512/ums512_gic.c", "xnu/platform/ums512/ums512_irq_test.c",
+    "xnu/platform/ums512/ums512_sched_test.c",
     "tools/crypto_check.py", "tests/crypto_rng_kat.c",
     "tools/xnu_crypto.py", "xnu/platform/ums512/ums512_rng.h",
     "xnu/platform/ums512/ums512_rng.c", "xnu/platform/ums512/ums512_crypto.c",
@@ -181,12 +182,15 @@ def prepare(work):
     shutil.copyfile(ROOT / "xnu/platform/ums512/cpu_entry.h", src / "osfmk/ums512/cpu_entry.h")
     shutil.copyfile(ROOT / 'xnu/platform/ums512/ums512_runtime.c',src / 'osfmk/ums512/ums512_runtime.c')
     shutil.copyfile(ROOT/'xnu/platform/ums512/ums512_irq_test.c',src/'osfmk/ums512/ums512_irq_test.c')
-    shutil.copyfile(ROOT/'xnu/platform/ums512/ums512_gic.c',src/'pexpert/arm/pe_ums512_gic.c')
-    with (src/'pexpert/conf/files').open('a',newline='\n') as config_stream:
-        config_stream.write('\npexpert/arm/pe_ums512_gic.c\toptional ums512\n')
+    shutil.copyfile(ROOT/'xnu/platform/ums512/ums512_sched_test.c',src/'osfmk/ums512/ums512_sched_test.c')
+    # The handler uses private CPU/rtclock state, so compile in OSFMK's private
+    # header context. PExpert calls the public initialization entry only.
+    shutil.copyfile(ROOT/'xnu/platform/ums512/ums512_gic.c',src/'osfmk/ums512/ums512_gic.c')
     with (src/'osfmk/conf/files').open('a',newline='\n') as config_stream:
         config_stream.write('\nosfmk/ums512/ums512_runtime.c\toptional ums512\n')
         config_stream.write('\nosfmk/ums512/ums512_irq_test.c\toptional ums512\n')
+        config_stream.write('\nosfmk/ums512/ums512_sched_test.c\toptional ums512\n')
+        config_stream.write('\nosfmk/ums512/ums512_gic.c\toptional ums512\n')
     master = (src / "config/MASTER").read_text()
     original = (src / "config/MASTER.arm64.MacOSX").read_text()
     board = full_master(original)
