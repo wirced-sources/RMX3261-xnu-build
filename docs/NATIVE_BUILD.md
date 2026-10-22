@@ -199,3 +199,31 @@ is bit-identical to independent build39777726707:
 SHA2562d883d9aedeb556c7d969ee050fd8b2ab165330e02bcde96a921eee0b8bdb860.
 Different bootstrap stack VAs show runtime ASLR differed. Arbitrary GPRs,
 unrecognized panic argument blocks and unused stack slots are not exported.
+
+## Experimental trust verifier and interrupt backend
+
+The added libDER/libDERImg4 subset is pinned to OpenCore
+25d02c8d051dc2e9d9166b5a3b343ec5b77104cc and fetched with size/SHA256 verification.
+Its APSL2/BSD notices are retained in the isolated tree. Platform headers,
+alignment-safe descriptor stores and const-correct decoder views are adapted;
+internal functions are made static or declared explicitly. BearSSL RSA public
+verification has explicit bounded narrowing conversions and a hash/OID length
+guard. Upstream signature, certificate-role and payload checks remain enabled.
+No UEFI digest override or physical platform identity is imported.
+
+The strict `trst` IM4M laboratory profile uses a synthetic QEMU identity, pinned
+public root/issuer/leaf certificates and real RSA2048/SHA256. It verifies raw v2
+SHA256 CDHash modules without privilege flags. It has positive, negative and
+mutation/truncation tests. It neither registers Image4/AMFI tables nor replaces
+their MAC/entitlement/runtime semantics. `tests/security_abi.c` also compiles the
+original interfaces directly. Native compilation and actual kernel tests remain
+distinct from the host tests; source documentation describes the missing policy.
+
+The QEMU-only GICv3 backend uses FDT-derived ADT ranges, checks distributor DS=1
+and affinity routing, selects the redistributor by full MPIDR affinity, configures
+Group1NS PPI27 and registers an actual XNU interrupt handler. It acknowledges
+IAR1 and completes EOI1 after the original rtclock_intr returns. No secure-state
+transition is attempted. It refuses a physical/unknown model or security state.
+The optional kernel hook queues three original timer_call deadlines and requires
+their callbacks in real masked interrupt context before timeout. This path still
+requires execution evidence; compilation alone does not verify IRQ delivery.

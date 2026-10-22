@@ -5,6 +5,7 @@ is adapted; no certificate/signature/role check is removed. This is not AMFI.
 """
 import hashlib
 import json
+import re
 from pathlib import Path
 import shutil
 import tarfile
@@ -15,7 +16,7 @@ COMMIT = '25d02c8d051dc2e9d9166b5a3b343ec5b77104cc'
 SIZE = 19128710
 SHA256 = 'db71866f1b4d7f2606513e721b0dbe19c749fe75f6e124790b87ba362d9993d7'
 DIRECTORY = 'Library/OcAppleImg4Lib/'
-CFILES = ('libDER/DER_CertCrl.c','libDER/DER_Decode.c','libDER/DER_Digest.c',
+CFILES = ('libDER/DER_CertCrl.c','libDER/DER_Decode.c',
           'libDER/DER_Keys.c','libDER/oids.c','libDERImg4/DER_Img4Manifest.c',
           'libDERImg4/Img4oids.c')
 
@@ -88,8 +89,42 @@ def install(destination):
         raise ValueError('pinned descriptor storage changed')
     text=text.replace(old,old+'\n\t\t\t\t\tDERMemmove(byteDst, dst, sizeof(*dst));')
     decode.write_text(text,newline='\n')
+    # The historical parser uses mutable pointers for read-only DER views.
+    # Make the complete selected decoder const-correct instead of suppressing
+    # XNU's cast-qual diagnostics or copying attacker-controlled buffers.
+    for header in ('libDER/libDER.h','libDER/DER_Decode.h'):
+        path=dest/header;text=path.read_text()
+        text=re.sub(r'(?<!const )\bDERByte(\s*\*)',r'const DERByte\1',text)
+        text=re.sub(r'const DERByte(\s*\*numUnusedBits)',r'DERByte\1',text)
+        path.write_text(text,newline='\n')
+    for path in dest.rglob('*.c'):
+        if path.relative_to(dest).as_posix() not in CFILES:
+            continue
+        text=path.read_text()
+        # All DERByte pointer locals here are input cursors, except byteDst.
+        text=re.sub(r'(?<!const )\bDERByte(\s*\*)',r'const DERByte\1',text)
+        text=re.sub(r'const DERByte(\s*\*numUnusedBits)',r'DERByte\1',text)
+        text=text.replace('const DERByte *byteDst = (const DERByte *)dest',
+                          'DERByte *byteDst = (DERByte *)dest')
+        path.write_text(text,newline='\n')
+    manifest=dest/'libDERImg4/DER_Img4Manifest.c';text=manifest.read_text()
+    names=('DERItemCompare','DERItemNull','DERImg4ParseInteger64','DERImg4ParseInteger32',
+           'DERVerifySignature','DERImg4ManifestVerifyCertIssuer','DERImg4ManifestVerifySignature',
+           'DERImg4FindPropertyItem','DERImg4ManifestDecodePropertyBoolean','DERImg4DecodePropertyInteger32',
+           'DERImg4DecodePropertyInteger64','DERImg4ValidateCertificateRole','DERImg4ManifestDecodeProperty',
+           'DERImg4ManifestDecodeProperties')
+    for name in names:
+        text,count=re.subn(r'(?m)^(bool|DERReturn)\n'+name+r' \(',r'static\n\1\n'+name+' (',text)
+        if count!=1:raise ValueError('pinned internal function changed: '+name)
+    manifest.write_text(text,newline='\n')
+    header=dest/'libDERImg4/DER_Img4Manifest.h';text=header.read_text()
+    text=text.replace('#endif // DER_IMG4_MANIFEST_H','''DERReturn DERImg4FindDecodeProperty(const DERItem *,DERTag,DERTag,DERImg4Property *);
+DERReturn DERImg4DecodeProperty(const DERItem *,DERTag,DERImg4Property *);
+#endif // DER_IMG4_MANIFEST_H''')
+    header.write_text(text,newline='\n')
     config = dest/'libDERImg4/libDERImg4_config.h'
     text = config.read_text().replace('const UINT8 *','const uint8_t *').replace('const UINTN  *','const size_t *')
+    text=text.replace('DERByte        *Modulus','const DERByte  *Modulus').replace('uint8_t        *Data,','const uint8_t  *Data,')
     config.write_text(text,newline='\n')
     for name in ('ums512_img4.h','ums512_img4.c','ums512_img4_vectors.h'):
         shutil.copyfile(ROOT/'xnu/platform/ums512'/name,dest/name)

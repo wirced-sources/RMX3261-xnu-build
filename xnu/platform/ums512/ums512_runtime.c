@@ -18,6 +18,7 @@
 #include <pexpert/device_tree.h>
 #include <libkern/section_keywords.h>
 #include "ums512_img4.h"
+void ums512_irq_selftest(void);
 
 struct ums512_runtime_proof {
     uint64_t magic, complete, phase, vm_allocations, verified_bytes;
@@ -120,5 +121,7 @@ void ums512_runtime_selftest(void)
     ums512_runtime_proof.phase=3;
     ums512_runtime_proof.signature_vectors=ums512_img4_selftest();
     if (ums512_runtime_proof.signature_vectors!=30) { panic("UMS512 Image4 test vector count mismatch"); }
+    ums512_runtime_proof.phase=4;
+    ums512_irq_selftest();
     ums512_runtime_proof.complete=1;
 }

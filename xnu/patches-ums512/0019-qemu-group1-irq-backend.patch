@@ -1,0 +1,21 @@
+--- a/pexpert/arm/pe_fiq.c
++++ b/pexpert/arm/pe_fiq.c
+@@ -12,7 +12,7 @@
+ #include <pexpert/arm64/board_config.h>
+ 
+ 
+-#if HAS_GIC_V3
++#if HAS_GIC_V3 && !UMS512
+ #define GICR_WAKE_TIMEOUT_NS (1000000000ULL) // timeout for redistributor wakeup (default 1s)
+ MACHINE_TIMEOUT(gicr_wake_timeout_ns, "gicr-wake-timeout", GICR_WAKE_TIMEOUT_NS, MACHINE_TIMEOUT_UNIT_NSEC, NULL);
+ 
+@@ -173,5 +173,9 @@
+ void
+ pe_init_fiq()
+ {
++#if UMS512
++	extern void ums512_gic_init(void);
++	ums512_gic_init();
++#endif
+ }
+ #endif

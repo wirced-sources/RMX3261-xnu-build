@@ -12,15 +12,16 @@
 #include "libDERImg4/libDERImg4.h"
 #include "libDERImg4/DER_Img4Manifest.h"
 #include "libDERImg4/Img4oids.h"
+static const size_t root_size=sizeof(ums_img4_root);
 #ifdef KERNEL
 #include <kern/debug.h>
 #include <libkern/section_keywords.h>
 SECURITY_READ_ONLY_LATE(const uint8_t *) DERImg4RootCertificate=ums_img4_root;
+SECURITY_READ_ONLY_LATE(const size_t *) DERImg4RootCertificateSize=&root_size;
 #else
 const uint8_t *DERImg4RootCertificate=ums_img4_root;
-#endif
-static const size_t root_size=sizeof(ums_img4_root);
 const size_t *DERImg4RootCertificateSize=&root_size;
+#endif
 
 static int equal(const uint8_t *a,const uint8_t *b,size_t n)
 {
@@ -34,8 +35,8 @@ static void hash256(const void *p,size_t n,uint8_t out[32])
     br_sha256_init(&context); br_sha256_update(&context,p,n); br_sha256_out(&context,out);
 }
 
-bool DERImg4VerifySignature(DERByte *modulus,DERSize size,uint32_t exponent,
-    const uint8_t *sig,size_t sig_size,uint8_t *data,size_t data_size,const DERItem *oid)
+bool DERImg4VerifySignature(const DERByte *modulus,DERSize size,uint32_t exponent,
+    const uint8_t *sig,size_t sig_size,const uint8_t *data,size_t data_size,const DERItem *oid)
 {
     /* This reviewed test profile intentionally supports only RSA2048/SHA256.
      * Unknown algorithms, short/even moduli and other exponents are rejected.
@@ -44,7 +45,8 @@ bool DERImg4VerifySignature(DERByte *modulus,DERSize size,uint32_t exponent,
     while (size && *modulus==0) { modulus++; size--; }
     if (size!=256 || !(modulus[0]&0x80) || !(modulus[255]&1) ||
         exponent!=65537 || sig_size!=256 || !DEROidCompare(oid,&oidSha256Rsa)) { return false; }
-    br_rsa_public_key key={modulus,size,e,sizeof(e)};
+    uint8_t public_modulus[256];memcpy(public_modulus,modulus,sizeof(public_modulus));
+    br_rsa_public_key key={public_modulus,size,e,sizeof(e)};
     static const uint8_t sha256_oid[]={9,0x60,0x86,0x48,1,0x65,3,4,2,1};
     hash256(data,data_size,digest);
     return br_rsa_i31_pkcs1_vrfy(sig,sig_size,sha256_oid,32,&key,recovered)==1 &&
@@ -54,9 +56,11 @@ bool DERImg4VerifySignature(DERByte *modulus,DERSize size,uint32_t exponent,
 /* libDER is BER tolerant. Reject non-minimal tags/lengths, indefinite lengths,
  * malformed INTEGER/BOOLEAN and excessive recursion before entering it.
  */
-static int canonical(const uint8_t *p,size_t n,unsigned depth)
+static int canonical(const uint8_t *p,size_t n,unsigned depth,int sorted)
 {
     if (depth>16) { return 0; }
+    const uint8_t *previous=NULL;
+    size_t previous_size=0;
     while (n) {
         size_t h=1,len=0;
         uint8_t tag=p[0];
@@ -79,10 +83,19 @@ static int canonical(const uint8_t *p,size_t n,unsigned depth)
             if (len<128) { return 0; }
         } else { len=first; }
         if (len>n-h) { return 0; }
+        if (sorted && previous) {
+            size_t common=previous_size<h+len?previous_size:h+len;
+            int order=memcmp(previous,p,common);
+            if (order>0 || (order==0 && previous_size>=h+len)) { return 0; }
+        }
         if (tag==2 && (!len || (len>1 &&
             ((p[h]==0 && !(p[h+1]&128)) || (p[h]==255 && (p[h+1]&128)))))) { return 0; }
         if (tag==1 && (len!=1 || (p[h]!=0 && p[h]!=255))) { return 0; }
-        if ((tag&32) && !canonical(p+h,len,depth+1)) { return 0; }
+        if (tag==5 && len) { return 0; }
+        if (tag==3 && (!len || p[h]>7 || (len==1 && p[h]) ||
+            (len>1 && (p[h+len-1]&((1u<<p[h])-1))))) { return 0; }
+        if ((tag&32) && !canonical(p+h,len,depth+1,tag==0x31)) { return 0; }
+        previous=p;previous_size=h+len;
         p+=h+len; n-=h+len;
     }
     return 1;
@@ -110,10 +123,19 @@ static int properties(const DERItem *set,const char *const *names,size_t count)
 
 static int manifest_profile(const uint8_t *p,size_t n)
 {
-    DERItem input={(DERByte *)(uintptr_t)p,n};
+    DERItem input={p,n};
     DERImg4Manifest manifest;
     DERDecodedInfo body;
     DERImg4Property manb,manp,object;
+    DERTag top_tag;
+    DERSequence top_sequence;
+    DERDecodedInfo child;
+    static const DERTag tags[]={ASN1_IA5_STRING,ASN1_INTEGER,ASN1_CONSTR_SET,ASN1_OCTET_STRING,ASN1_CONSTR_SEQUENCE};
+    if (DERDecodeSeqInit(&input,&top_tag,&top_sequence) || top_tag!=ASN1_CONSTR_SEQUENCE) { return 0; }
+    for (unsigned i=0;i<5;i++) {
+        if (DERDecodeSeqNext(&top_sequence,&child) || child.tag!=tags[i]) { return 0; }
+    }
+    if (DERDecodeSeqNext(&top_sequence,&child)!=DR_EndOfSequence) { return 0; }
     if (DERParseSequence(&input,DERNumImg4ManifestItemSpecs,DERImg4ManifestItemSpecs,&manifest,sizeof(manifest)) ||
         DERDecodeItem(&manifest.body,&body)) { return 0; }
     static const char *const top[]={"MANB"},*const sets[]={"MANP","trst"};
@@ -133,7 +155,8 @@ static int manifest_profile(const uint8_t *p,size_t n)
     DERSequence chain;
     if (DERDecodeSeqContentInit(&manifest.certificates,&chain)) { return 0; }
     for (unsigned i=0;i<2;i++) {
-        uint8_t *start=chain.nextItem,digest[32];
+        const uint8_t *start=chain.nextItem;
+        uint8_t digest[32];
         DERDecodedInfo cert;
         if (DERDecodeSeqNext(&chain,&cert)) { return 0; }
         hash256(start,(size_t)(chain.nextItem-start),digest);
@@ -166,7 +189,7 @@ static int module_valid(const uint8_t *p,size_t n)
 enum ums512_img4_result ums512_img4_verify(const uint8_t *payload,size_t bytes,const uint8_t *manifest,size_t len)
 {
     if (!payload || !manifest || !bytes || bytes>24600 || !len || len>65536) { return UMS_IMG4_ARGUMENT; }
-    if (!canonical(manifest,len,0)) { return UMS_IMG4_ENCODING; }
+    if (!canonical(manifest,len,0,0)) { return UMS_IMG4_ENCODING; }
     if (!manifest_profile(manifest,len)) { return UMS_IMG4_POLICY; }
     DERImg4ManifestInfo info;
     if (DERImg4ParseManifest(&info,manifest,len,0x74727374)!=DR_Success) { return UMS_IMG4_SIGNATURE; }

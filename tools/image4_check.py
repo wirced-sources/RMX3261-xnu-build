@@ -34,6 +34,13 @@ int main(void) { unsigned n=ums512_img4_selftest();
         if (ums512_img4_verify(copy,good->payload_size,good->manifest,good->manifest_size)==UMS_IMG4_OK) return 4;
         rejected++;
     }
+    /* Extra unsigned top-level field must not be silently ignored. */
+    if (good->manifest[1]!=0x82) return 5;
+    memcpy(copy,good->manifest,good->manifest_size);copy[good->manifest_size]=5;copy[good->manifest_size+1]=0;
+    unsigned length=((unsigned)copy[2]<<8)|copy[3];length+=2;
+    copy[2]=(unsigned char)(length>>8);copy[3]=(unsigned char)length;
+    if (ums512_img4_verify(good->payload,good->payload_size,copy,good->manifest_size+2)==UMS_IMG4_OK) return 6;
+    rejected++;
     printf("Image4 actual verifier: %u public vectors and %u rejected mutations/truncations passed\\n",n,rejected);
     return 0; }
 ''')
