@@ -44,6 +44,20 @@ def install(src):
             if name.startswith('src/') and name.endswith('.c'):
                 base = 'br_'+base
             (dest/base).write_bytes(data)
+    # XNU uses a freestanding header set. Keep the algorithm sources untouched.
+    fixes = {
+        'inner.h': [('#include <limits.h>', '#ifdef KERNEL\n#include <machine/limits.h>\n#else\n#include <limits.h>\n#endif')],
+        'bearssl_ssl.h': [('cc->version_min = version_min;', 'cc->version_min = (uint16_t)version_min;'),
+                         ('cc->version_max = version_max;', 'cc->version_max = (uint16_t)version_max;'),
+                         ('ctx->protocol_names_num = num;', 'ctx->protocol_names_num = (uint16_t)num;')]
+    }
+    for name,changes in fixes.items():
+        text = (dest/name).read_text()
+        for old,new in changes:
+            if text.count(old) != 1:
+                raise ValueError('pinned crypto support header changed: '+name)
+            text = text.replace(old,new)
+        (dest/name).write_text(text,newline='\n')
     for name in ('ums512_rng.h','ums512_rng.c','ums512_crypto.c'):
         shutil.copyfile(ROOT/'xnu/platform/ums512'/name,dest/name)
     files = ['ums512_crypto.c','ums512_rng.c',*['br_'+Path(n).name for n in SOURCES]]

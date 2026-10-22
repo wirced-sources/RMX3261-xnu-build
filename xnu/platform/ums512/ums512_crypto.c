@@ -153,11 +153,14 @@ static void hash_final(const struct ccdigest_info *di, ccdigest_ctx_t original, 
     /* corecrypto final is non-destructive; callers may finalize repeatedly. */
     ccdigest_di_decl(di, ctx);
     memcpy(ctx,original,ccdigest_di_size(di));
-    uint64_t bits = ccdigest_nbits(di, ctx) + 8*ccdigest_num(di, ctx);
+    unsigned used;
+    memcpy(&used,ccdigest_data(di,ctx)+di->block_size,sizeof(used));
+    if (used >= di->block_size) { panic("UMS512 invalid digest buffer length"); }
+    uint64_t bits = ccdigest_nbits(di, ctx) + 8*used;
     bool little = di->output_size == 16;
     size_t len_size = di->block_size == 128 ? 16 : 8;
     unsigned char padding[256] = {0x80};
-    size_t pad = di->block_size - ccdigest_num(di, ctx);
+    size_t pad = di->block_size - used;
     if (pad <= len_size) { pad += di->block_size; }
     for (size_t i=0; i<8; i++) {
         padding[pad-8+(little ? i : 7-i)] = (unsigned char)(bits >> (8*i));

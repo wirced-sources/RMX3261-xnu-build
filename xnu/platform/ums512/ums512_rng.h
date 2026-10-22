@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MIT; platform-owned adapter, no Apple implementation. */
 #pragma once
-#include "bearssl.h"
+#include "bearssl_rand.h"
 struct ums512_rng {
     br_hmac_drbg_context drbg;
     uint64_t requests;
