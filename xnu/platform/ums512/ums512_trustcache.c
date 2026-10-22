@@ -8,6 +8,7 @@
  */
 #include <stdint.h>
 #include <string.h>
+#include <sys/errno.h>
 #include <kern/debug.h>
 #include <kern/kalloc.h>
 #include <kern/locks.h>
@@ -79,7 +80,19 @@ static TCReturn_t load(TrustCacheRuntime_t *runtime,TCType_t type,TrustCache_t *
     errno_t status=ums512_image4_interface.i4if_v9.firmware_evaluate(fw,
         ums512_image4_interface.i4if_v7.chip_select_personalized_ap(),NULL);
     ums512_image4_interface.i4if_v7.firmware_destroy(&fw);
-    if (status) { kfree_data(bytes,size); return ret(kTCComponentImage4Validate,kTCReturnImage4PayloadViolation); }
+    if (status) {
+        uint8_t error;
+        switch (status) {
+        case EINVAL: error=kTCReturnInvalidArguments; break;
+        case ENOTSUP: error=kTCReturnUnsupported; break;
+        case EFTYPE: error=kTCReturnImage4DecodeError; break;
+        case EAUTH: error=kTCReturnImage4WrongCrypto; break;
+        case EACCES: error=kTCReturnImage4ManifestViolation; break;
+        case ENOEXEC: error=kTCReturnImage4PayloadViolation; break;
+        default: error=kTCReturnImage4UnknownError; break;
+        }
+        kfree_data(bytes,size); return ret(kTCComponentImage4Validate,error);
+    }
     lck_mtx_lock(&ums512_tc_lock);
     uint8_t error=kTCReturnSuccess;
     if (loaded==TC_MAX) { error=kTCReturnNotPermitted; }

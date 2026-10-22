@@ -8,6 +8,7 @@
 #include <string.h>
 #include <sys/errno.h>
 #include <sys/codesign.h>
+#include <sys/trust_caches.h>
 #include <mach/vm_prot.h>
 #include <kern/debug.h>
 #include <libkern/section_keywords.h>
@@ -22,6 +23,12 @@ struct timespec;
 #include <pexpert/device_tree.h>
 #include "ums512_img4.h"
 #include "ums512_security.h"
+#if CODE_SIGNING_MONITOR || PMAP_CS_PPL_MONITOR
+#error Laboratory provider requires the explicit non-monitor QEMU profile
+#endif
+#if !CONFIG_MACF
+#error Laboratory provider requires mandatory MAC execution quarantine
+#endif
 
 extern const img4_interface_t ums512_image4_interface;
 extern const TrustCacheInterface_t ums512_trustcache_interface;
@@ -162,6 +169,7 @@ void ums512_security_runtime_test(void)
     require(img4if==&ums512_image4_interface && amfi==&lab_amfi,"registered interfaces");
     require(trust_cache_rt && trust_cache_rt->mutableRT && trust_cache_rt->image4RT==IMG4_RUNTIME_DEFAULT,"stock runtime initializer");
     ums512_security_proof.stock_runtime_ready=1;
+    ums512_security_proof.firmware_cases=ums512_image4_runtime_selftest();
     const uint8_t *good=NULL,*manifest=NULL; size_t size=0,length=0; int accepted=0;
     require(ums512_img4_vector(0,&good,&size,&manifest,&length,&accepted) && accepted,"public fixture");
     TrustCache_t invalid={0};
@@ -197,7 +205,18 @@ void ums512_security_runtime_test(void)
     require(amfi->TrustCache.constructInvalid(&invalid,good,size).error==kTCReturnSuccess && invalid.type==kTCTypeInvalid,"invalid construction");
     token.trustCache=&invalid; token.trustCacheEntry=good+24;
     require(amfi->TrustCache.queryGetFlags(&token,&flags).error!=kTCReturnSuccess,"forged token rejected");
-    ums512_security_proof.query_cases=19;
+    require(query_trust_cache(kTCQueryTypeAll,good+24,&token)==KERN_SUCCESS,"stock XNU locked query");
+    require(query_trust_cache(kTCQueryTypeAll,unknown,&token)==KERN_NOT_FOUND,"stock XNU unknown query");
+    require(query_trust_cache(kTCQueryTypeAll,good+24,&token)==KERN_SUCCESS,"snapshot query before corruption");
+    /* Fault injection into our own publicly known test module. The stored
+     * authentication digest is never changed or bypassed. */
+    uint8_t *test_module=(void *)(uintptr_t)module;
+    test_module[24]^=1;
+    require(amfi->TrustCache.queryGetFlags(&token,&flags).error!=kTCReturnSuccess,"corrupted token rejected");
+    require(amfi->TrustCache.query(trust_cache_rt,kTCQueryTypeAll,good+24,NULL).error==kTCReturnInvalidModule,"corrupted module rejected");
+    test_module[24]^=1;
+    require(query_trust_cache(kTCQueryTypeAll,good+24,&token)==KERN_SUCCESS,"authentic snapshot restored");
+    ums512_security_proof.query_cases=25;
     require(amfi->OSEntitlements.queryEntitlementBoolean(NULL,"com.apple.private.skip-library-validation")!=KERN_SUCCESS,"no entitlement grants");
     require(ums512_security_proof.cache_cases==30,"all signed vectors checked");
     ums512_security_proof.complete=1;

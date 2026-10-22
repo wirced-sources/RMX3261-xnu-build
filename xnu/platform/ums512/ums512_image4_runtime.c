@@ -244,3 +244,70 @@ const img4_interface_t ums512_image4_interface={
         .firmware_spec=&firmware_spec,.chip_spec=&chip_spec,.runtime_default=&lab_runtime,.buff_dealloc=buff_dealloc},
     .i4if_v9={.firmware_evaluate=fw_evaluate},
 };
+
+struct execution_test {
+    const uint8_t *payload;
+    size_t size;
+    bool expect_error;
+    unsigned calls;
+};
+static unsigned buffer_releases;
+static void release_test_buffer(const img4_runtime_t *rt,void *p,size_t n)
+{ buffer_releases++; rt_free(rt,p,n); }
+static void execution_test_callback(const img4_firmware_t fw,img4_image_t image,errno_t error,void *context)
+{
+    (void)fw;
+    struct execution_test *test=context;
+    test->calls++;
+    if (test->expect_error) {
+        if (!error || image) { panic("Image4 lab: unauthenticated execution callback"); }
+    } else {
+        if (error || !image) { panic("Image4 lab: valid execution callback missing"); }
+        const img4_buff_t *bytes=img4_image_get_bytes(image);
+        if (!bytes || bytes->i4b_len!=test->size || memcmp(bytes->i4b_bytes,test->payload,test->size)) {
+            panic("Image4 lab: authenticated image mismatch");
+        }
+    }
+}
+unsigned ums512_image4_runtime_selftest(void)
+{
+    const uint8_t *payload,*manifest; size_t n,len; int accepted;
+    buffer_releases=0;
+    for (unsigned index=0;index<2;index++) {
+        if (!ums512_img4_vector(index,&payload,&n,&manifest,&len,&accepted)) { panic("Image4 lab: missing lifecycle fixture"); }
+        struct execution_test test={.payload=payload,.size=n,.expect_error=!accepted};
+        img4_firmware_execution_context_t exec={.i4fex_version=IMG4_FIRMWARE_EXECUTION_CONTEXT_STRUCT_VERSION,
+            .i4fex_execute=execution_test_callback,.i4fex_context=&test};
+        img4_buff_t buff=IMG4_BUFF_INIT;
+        uint8_t *original_payload=rt_alloc(&lab_runtime,n),*original_manifest=rt_alloc(&lab_runtime,len);
+        if (!original_payload || !original_manifest) { panic("Image4 lab: lifecycle allocation"); }
+        memcpy(original_payload,payload,n); memcpy(original_manifest,manifest,len);
+        buff.i4b_bytes=original_payload; buff.i4b_len=n; buff.i4b_dealloc=release_test_buffer;
+        img4_firmware_t fw=img4_firmware_new(IMG4_RUNTIME_DEFAULT,&exec,0x74727374,&buff,IMG4_FIRMWARE_FLAG_BARE);
+        if (!fw || buff.i4b_bytes) { panic("Image4 lab: payload ownership"); }
+        buff=IMG4_BUFF_INIT; buff.i4b_bytes=original_manifest; buff.i4b_len=len; buff.i4b_dealloc=release_test_buffer;
+        img4_firmware_attach_manifest(fw,&buff);
+        if (buff.i4b_bytes) { panic("Image4 lab: manifest ownership"); }
+        /* Caller storage can change after the snapshots, without changing the
+         * authenticated bytes delivered to the callback. */
+        original_payload[0]^=1; original_manifest[0]^=1;
+        if ((img4_firmware_evaluate(fw,chip_select(),NULL)==0)!=(accepted!=0)) { panic("Image4 lab: snapshot evaluation"); }
+        img4_firmware_execute(fw,chip_select(),NULL);
+        if (test.calls!=1) { panic("Image4 lab: callback count"); }
+        img4_nonce_t nonce={0};
+        if (img4_firmware_evaluate(fw,chip_select(),&nonce)==0) { panic("Image4 lab: unsupported nonce accepted"); }
+        img4_firmware_destroy(&fw);
+        if (fw || buffer_releases!=(index+1)*2) { panic("Image4 lab: owned buffer release"); }
+    }
+    /* Stack-backed firmware is destroyed without freeing caller object storage. */
+    _Alignas(16) uint8_t storage[IMG4_FIRMWARE_SIZE_RECOMMENDED];
+    img4_firmware_t fw=img4_firmware_init_from_buff(storage,sizeof(storage));
+    img4_firmware_execution_context_t exec={.i4fex_version=IMG4_FIRMWARE_EXECUTION_CONTEXT_STRUCT_VERSION};
+    img4_buff_t buff=IMG4_BUFF_INIT;
+    buff.i4b_bytes=(void *)(uintptr_t)payload; buff.i4b_len=n;
+    img4_firmware_init(fw,IMG4_RUNTIME_DEFAULT,&exec,0x74727374,&buff,IMG4_FIRMWARE_FLAG_INIT);
+    if (img4_firmware_evaluate(fw,chip_select(),NULL)!=ENOTSUP) { panic("Image4 lab: unsupported flags accepted"); }
+    img4_firmware_destroy(&fw);
+    if (fw || buffer_releases!=4) { panic("Image4 lab: stack object destruction"); }
+    return 12; /* Two snapshot/callback/nonce/ownership cycles plus stack/flag checks. */
+}

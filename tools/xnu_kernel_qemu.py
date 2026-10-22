@@ -265,6 +265,31 @@ class RSP:
         return regs
 
 
+def virtual_uart_binding(tree):
+    """Only allow facts from QEMU's actual PL011 and its fixed uartclk."""
+    nodes=[n for n in tree.nodes.values() if 'arm,pl011' in n.strings('compatible')]
+    if len(nodes)!=1:
+        raise ValueError('expected exactly one QEMU PL011')
+    uart=nodes[0]
+    chosen=tree.nodes.get('/chosen')
+    if chosen is None or chosen.strings('stdout-path')!=[uart.path]:
+        raise ValueError('QEMU stdout is not the PL011')
+    names=uart.strings('clock-names'); clocks=uart.cells('clocks',[])
+    if names!=['uartclk','apb_pclk'] or len(clocks)!=2:
+        raise ValueError('unsupported QEMU UART clocks')
+    providers=[n for n in tree.nodes.values() if n.cells('phandle',[])==[clocks[0]]]
+    if len(providers)!=1 or 'fixed-clock' not in providers[0].strings('compatible') or providers[0].cells('#clock-cells')!=[0]:
+        raise ValueError('QEMU UART fixed-clock provider not found')
+    if clocks[0]!=clocks[1]:
+        raise ValueError('QEMU UART clocks do not share the fixed clock')
+    frequency=providers[0].cells('clock-frequency',[])
+    regs=tree.reg(uart)
+    if len(frequency)!=1 or not 2000000<=frequency[0]<=200000000 or len(regs)!=1 or not 0x1000<=regs[0][1]<=0x10000:
+        raise ValueError('invalid QEMU UART clock/range')
+    return {'physical':regs[0][0],'bytes':regs[0][1],'clock_hz':frequency[0],
+            'source':'QEMU arm,pl011 FDT and fixed uartclk'}
+
+
 def inspect_mapping(rsp, address, system):
     """Read-only 16KB/full-L1 EL1 table walk for this exact QEMU profile."""
     tcr = int(system['TCR_EL1'],16)
@@ -344,6 +369,12 @@ def execute(kernel, record, out, qemu, clang):
         raise ValueError('unexpected QEMU virt RAM/GIC layout')
     pa, mem = memory[0][0]
     gicd, gicr = gics[0]
+    uart=virtual_uart_binding(tree) if '_ums512_uart_proof' in sym else None
+    devices_end=gicr[0]+gicr[1]
+    if uart:
+        if uart['physical']<devices_end or uart['physical']+uart['bytes']>pa:
+            raise ValueError('QEMU UART overlaps GIC/RAM')
+        devices_end=max(devices_end,uart['physical']+uart['bytes'])
     va = min(s['vmaddr'] for s in report['segments'] if s['initprot'] and s['vmsize']) & -0x2000000
     end = max(s['vmaddr']+s['vmsize'] for s in report['segments'] if s['initprot'])
     adt_pa = align(pa+end-va)
@@ -351,7 +382,10 @@ def execute(kernel, record, out, qemu, clang):
         node('defaults'), # pmap requires the node; absent ASID property uses its real default.
         node('chosen', [('dram-base',struct.pack('<Q',pa)),('dram-size',struct.pack('<Q',mem)),('random-seed',os.urandom(64))], [node('memory-map')]),
         node('cpus', children=[node('cpu0',[('device_type',b'cpu\0'),('state',b'running\0'),('reg',struct.pack('<I',0)),('timebase-frequency',struct.pack('<I',0))])]),
-        node('arm-io',[('device_type',b'qemu,virt\0'),('ranges',struct.pack('<3Q',0,gicd[0],gicr[0]+gicr[1]-gicd[0]))], [node('gic',[('reg',struct.pack('<4Q',0,gicd[1],gicr[0]-gicd[0],gicr[1]))])])])
+        node('arm-io',[('device_type',b'qemu,virt\0'),('ranges',struct.pack('<3Q',0,gicd[0],devices_end-gicd[0]))],
+            [node('gic',[('reg',struct.pack('<4Q',0,gicd[1],gicr[0]-gicd[0],gicr[1]))])]+
+            ([node('uart0',[('compatible',b'arm,pl011\0'),('reg',struct.pack('<2Q',uart['physical']-gicd[0],uart['bytes'])),
+                            ('clock-frequency',struct.pack('<I',uart['clock_hz']))])] if uart else []))])
     args_pa = align(adt_pa+len(adt))
     top = args_pa+0x4000
     plan = mapping(report,pa,va,mem,adt_pa,len(adt),args_pa,top)
@@ -371,6 +405,8 @@ def execute(kernel, record, out, qemu, clang):
     # Original MacOSX progress UI requires a framebuffer. This QEMU profile is
     # headless: use its genuine UI-only boot argument, not fabricated video RAM.
     command_line = b'-noprogress'
+    if uart:
+        command_line += b' serial=1'
     runtime_requested = '_ums512_runtime_proof' in sym
     if runtime_requested:
         command_line += b' ums512-selftest=1'
@@ -389,12 +425,13 @@ def execute(kernel, record, out, qemu, clang):
         reserve.bind(('127.0.0.1',0))
         port = reserve.getsockname()[1]
     log = (out/'qemu.log').open('wb')
-    proc = subprocess.Popen([*base_cmd,'-display','none','-serial','none','-monitor','none','-no-reboot','-S',
+    proc = subprocess.Popen([*base_cmd,'-display','none','-serial',('file:'+str(out/'serial.log')) if uart else 'none','-monitor','none','-no-reboot','-S',
         '-gdb',f'tcp:127.0.0.1:{port}','-kernel',str(image),'-device',f'loader,file={out / "kernel.physical.bin"},addr={header_pa:#x},force-raw=on'],stdout=log,stderr=log)
     result = {'kernel_sha256':report['sha256'],'arm_init_executed':False,
               'kernel_boot_completed':False,'hardware_verified':False,'stops':[],
               'boot_arguments':command_line.decode('ascii'),
               'virtual_timer_fdt_binding':timer_binding,
+              'virtual_uart_fdt_binding':uart,
               'kernel_runtime_tests_requested':runtime_requested,
               'returned_init_functions':[]}
     try:
@@ -473,6 +510,12 @@ def execute(kernel, record, out, qemu, clang):
                 regs = rsp.registers()
                 name = boundaries.get(int(regs['pc'],16),'other stop')
                 result['stops'].append({'boundary':name,**control_registers(regs)})
+                if uart and name in ('_panic','_bsd_init','return:_ums512_security_runtime_test'):
+                    raw=bytes.fromhex(rsp.command(f'm{sym["_ums512_uart_proof"]:x},40'))
+                    result['uart_runtime']=dict(zip(('initialized','tx_bytes','rx_bytes','clock_hz','divisor64',
+                                                    'physical','size','identity_verified'),struct.unpack('<8Q',raw)))
+                    serial=(out/'serial.log').read_bytes()[:1024*1024]
+                    result['uart_ready_marker_received']=b'RMX-QEMU: PL011 console ready' in serial
                 if name == '_trust_cache_runtime_init':
                     observed = {}
                     for key in ('_img4if','_amfi'):

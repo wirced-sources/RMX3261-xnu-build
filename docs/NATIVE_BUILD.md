@@ -227,6 +227,25 @@ No production AMFI compatibility, entitlements or Apple boot trust are claimed.
 The stock trust_cache_runtime_init and subsequent startup calls remain intact.
 Native build and runtime evidence for this new integration are pending.
 
+The additional QEMU PL011 console backend is included inside the stock pe_serial
+multiplexer. Its MMIO range and fixed uartclk are validated from the actual QEMU
+FDT and exported as bounded ADT properties; no Realme UART constants are used.
+The backend checks all eight PrimeCell identity bytes against the ARM PL011
+implemented by [QEMU9.2.4](https://github.com/qemu/qemu/blob/v9.2.4/hw/char/pl011.c),
+computes 115200-baud divisors, disables UART DMA/interrupts and provides polled
+TX/RX. A bounded real TX marker and public counters distinguish execution from
+compilation. `serial=1` uses the original console route. Raw serial output stays
+ephemeral/ignored; only the fixed readiness marker and counters are reported.
+The complete patched pe_serial.c compiles locally with actual XNU ARM64 headers.
+Local QEMU11.1.0's actual FDT validates at0x09000000/4096 bytes/24MHz; this is
+separate from the pending native QEMU9.2.4 execution and no physical I/O claim.
+
+Run39802629382 never acquired a runner: job119907241053 has no steps or runner
+name. GitHub's annotation explicitly reports hosted-runner acquisition failure
+and macOS arm64 capacity constraints. This is not a compiler/kernel failure.
+GitHub has [announced](https://github.blog/changelog/2026-10-01-github-actions-macos-14-runner-image-retirement/)
+reduced macos-14 capacity and retirement on2026-11-02. No paid runner is used.
+
 The added libDER/libDERImg4 subset is pinned to OpenCore
 25d02c8d051dc2e9d9166b5a3b343ec5b77104cc and fetched with size/SHA256 verification.
 Its APSL2/BSD notices are retained in the isolated tree. Platform headers,

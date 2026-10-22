@@ -8,4 +8,5 @@ void ums512_security_init(void);
 void ums512_security_runtime_test(void);
 void ums512_mac_register(void);
 unsigned ums512_mac_selftest(void);
+unsigned ums512_image4_runtime_selftest(void);
 #endif
