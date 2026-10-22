@@ -9,7 +9,12 @@ import urllib.request
 ROOT = Path(__file__).resolve().parents[1]
 SOURCES = ('rand/hmac_drbg.c','mac/hmac.c','hash/md5.c','hash/sha1.c',
            'hash/sha2small.c','hash/sha2big.c','codec/dec32be.c','codec/enc32be.c',
-           'codec/dec32le.c','codec/enc32le.c','codec/dec64be.c','codec/enc64be.c')
+           'codec/dec32le.c','codec/enc32le.c','codec/dec64be.c','codec/enc64be.c',
+           'rsa/rsa_i31_pkcs1_vrfy.c','rsa/rsa_i31_pub.c','rsa/rsa_pkcs1_sig_unpad.c',
+           'int/i31_decode.c','int/i31_decmod.c','int/i31_encode.c','int/i31_ninv31.c',
+           'int/i31_modpow2.c','int/i31_montmul.c','int/i31_muladd.c','int/i31_tmont.c',
+           'int/i31_fmont.c','int/i31_sub.c','int/i31_add.c','int/i31_bitlen.c',
+           'int/i32_div32.c','codec/ccopy.c')
 
 def archive(fetch=False):
     spec = json.loads((ROOT/'xnu/native.lock.json').read_text())['portable_crypto']
@@ -47,6 +52,14 @@ def install(src):
     # XNU uses a freestanding header set. Keep the algorithm sources untouched.
     fixes = {
         'inner.h': [('#include <limits.h>', '#ifdef KERNEL\n#include <machine/limits.h>\n#else\n#include <limits.h>\n#endif')],
+        'br_rsa_pkcs1_sig_unpad.c': [
+            ('if (sig_len < 11)', 'if (sig_len < 11 || hash_len > 64 || (hash_oid != NULL && hash_oid[0] > 32))'),
+            ('pad2[2] = x2 + hash_len + 4;', 'pad2[2] = (unsigned char)(x2 + hash_len + 4);'),
+            ('pad2[4] = x2;', 'pad2[4] = (unsigned char)x2;'),
+            ('pad2[pad_len - 1] = hash_len;', 'pad2[pad_len - 1] = (unsigned char)hash_len;')],
+        'br_i31_modpow2.c': [('mask = -EQ(u, bits);','mask = -EQ((uint32_t)u, bits);')],
+        'br_i31_montmul.c': [('NEQ(dh, 0)','NEQ((uint32_t)dh, 0)')],
+        'br_ccopy.c': [('*d = MUX(ctl, x, y);','*d = (unsigned char)MUX(ctl, x, y);')],
         'bearssl_ssl.h': [('cc->version_min = version_min;', 'cc->version_min = (uint16_t)version_min;'),
                          ('cc->version_max = version_max;', 'cc->version_max = (uint16_t)version_max;'),
                          ('ctx->protocol_names_num = num;', 'ctx->protocol_names_num = (uint16_t)num;')]
@@ -65,5 +78,5 @@ def install(src):
     with config.open('a',newline='\n') as output:
         for name in files:
             output.write(f'\nlibkern/ums512/{name}\toptional ums512\n')
-    print('CRYPTO: pinned BearSSL0.6 RNG/digest/HMAC sources installed; no cipher/RSA provider',flush=True)
+    print('CRYPTO: BearSSL0.6 RNG/digest/HMAC and lab RSA verifier; no cipher or corecrypto RSA registration',flush=True)
     return dest

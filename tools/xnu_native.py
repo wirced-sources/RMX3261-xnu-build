@@ -46,6 +46,9 @@ PATCHES = (
     "xnu/patches/0005-non-pac-build-fixes.patch",
 )
 CAPSULE = (
+    "tools/image4_vendor.py", "tools/image4_check.py", "tests/security_abi.c",
+    "xnu/platform/ums512/ums512_img4.c", "xnu/platform/ums512/ums512_img4.h",
+    "xnu/platform/ums512/ums512_img4_vectors.h",
     "tools/crypto_check.py", "tests/crypto_rng_kat.c",
     "tools/xnu_crypto.py", "xnu/platform/ums512/ums512_rng.h",
     "xnu/platform/ums512/ums512_rng.c", "xnu/platform/ums512/ums512_crypto.c",
@@ -97,6 +100,8 @@ def source(name):
 def fetch():
     from xnu_crypto import archive
     archive(fetch=True)
+    from image4_vendor import archive as image4_archive
+    image4_archive(fetch=True)
     _, sources = specs()
     for name, spec in sources.items():
         try:
@@ -163,6 +168,12 @@ def prepare(work):
         output("git", "-C", src, "apply", ROOT / patch)
     from xnu_crypto import install as install_crypto
     install_crypto(src)
+    from image4_vendor import install as install_image4,CFILES
+    install_image4(src/'libkern/ums512_img4')
+    shutil.copyfile(ROOT/'tests/security_abi.c',src/'libkern/ums512_img4/security_abi.c')
+    with (src/'libkern/conf/files').open('a',newline='\n') as config_stream:
+        for name in ('ums512_img4.c','security_abi.c',*CFILES):
+            config_stream.write(f'\nlibkern/ums512_img4/{name}\toptional ums512\n')
     shutil.copyfile(ROOT / "xnu/platform/ums512/UMS512.h", src / "pexpert/pexpert/arm64/UMS512.h")
     (src / "osfmk/ums512").mkdir()
     shutil.copyfile(ROOT / "xnu/platform/ums512/cpu_entry.h", src / "osfmk/ums512/cpu_entry.h")
@@ -183,6 +194,9 @@ def prepare(work):
               "upstream_master": "MASTER.arm64.MacOSX", "sdk_profile": "MacOSX",
               "features": after, "patches": {p: digest(ROOT / p) for p in PATCHES},
               "portable_crypto": specs()[0]['portable_crypto'],
+              "image4_lab_verifier": specs()[0]['image4_verifier'],
+              "image4_adapters": {n:digest(ROOT/'xnu/platform/ums512'/n)
+                                  for n in ('ums512_img4.h','ums512_img4.c','ums512_img4_vectors.h')},
               "crypto_adapters": {n: digest(ROOT / 'xnu/platform/ums512' / n)
                                   for n in ('ums512_rng.h','ums512_rng.c','ums512_crypto.c')},
               "diagnostic_observer_included": False, "kernel_linked": False, "arm_init_executed": False}
@@ -316,6 +330,8 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
     src = prepare(work)
     run([python3,ROOT/'tools/crypto_check.py',src/'libkern/ums512','--compiler',tools['clang']],
         'crypto-known-answer',report,env,work,120)
+    run([python3,ROOT/'tools/image4_check.py',src/'libkern/ums512_img4',src/'libkern/ums512',
+         '--compiler',tools['clang']], 'image4-verifier',report,env,work,120)
     deps = {name: clone_work(name, work) for name in lock["sources"]}
     fake = work / "fakeroot"
     fake.mkdir()
@@ -346,7 +362,8 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
     ctf = {n: str(next(fake.rglob(n))) for n in ("ctfconvert", "ctfmerge", "ctfdump")}
     native = [*common, "MIG=" + str(mig), "MIGCOM=" + str(migcom), *[n.upper() + "=" + p for n, p in ctf.items()],
               "SRCROOT=" + str(src), "OBJROOT=" + str(work / "xnu.obj"), "SYMROOT=" + str(work / "xnu.sym"),
-              "INCFLAGS_SDK=-I" + str(fake / "usr/local/include/kernel"),
+              "INCFLAGS_SDK=-I" + str(fake / "usr/local/include/kernel")+
+                  " -I"+str(src/'libkern/ums512_img4')+" -I"+str(src/'libkern/ums512'),
               "LDFLAGS_KERNEL_SDK=-L" + str(fake / "usr/local/lib/kernel") + " -L" + sdk + "/usr/local/lib/kernel",
               # Newer Clang reports intentionally dead debug/statistics locals.
               # Keep the warning visible; no blanket BUILD_WERROR=0 or check removal.

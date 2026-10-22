@@ -17,10 +17,11 @@
 #include <pexpert/pexpert.h>
 #include <pexpert/device_tree.h>
 #include <libkern/section_keywords.h>
+#include "ums512_img4.h"
 
 struct ums512_runtime_proof {
     uint64_t magic, complete, phase, vm_allocations, verified_bytes;
-    uint64_t ports, message_roundtrips, reserved;
+    uint64_t ports, message_roundtrips, signature_vectors;
 };
 SECURITY_READ_ONLY_LATE(volatile struct ums512_runtime_proof) ums512_runtime_proof;
 _Static_assert(sizeof(struct ums512_runtime_proof) == 64, "debugger proof ABI");
@@ -117,5 +118,7 @@ void ums512_runtime_selftest(void)
     ums512_runtime_proof.phase=2;
     ipc_tests();
     ums512_runtime_proof.phase=3;
+    ums512_runtime_proof.signature_vectors=ums512_img4_selftest();
+    if (ums512_runtime_proof.signature_vectors!=30) { panic("UMS512 Image4 test vector count mismatch"); }
     ums512_runtime_proof.complete=1;
 }

@@ -29,6 +29,12 @@ def control_registers(registers, boot_args=False):
     return {name:registers[name] for name in fields if name in registers}
 
 
+def plain_panic_arguments(block):
+    # Pointer then promoted32-bit source line in an eight-byte vararg slot.
+    # The upper four padding bytes are not an argument value.
+    return struct.unpack_from('<QI',block)
+
+
 def image_cstring(data, segments, pointer, limit=512):
     """Only public audited-image strings, never arbitrary target memory."""
     owner = next((s for s in segments if s['vmaddr'] <= pointer < s['vmaddr']+s['filesize']),None)
@@ -449,9 +455,9 @@ def execute(kernel, record, out, qemu, clang):
                 if runtime_requested and name in ('return:_ums512_runtime_selftest','_panic'):
                     values = struct.unpack('<8Q',bytes.fromhex(rsp.command(f'm{sym["_ums512_runtime_proof"]:x},40')))
                     result['kernel_runtime_tests'] = dict(zip(
-                        ('magic','complete','phase','vm_allocations','verified_bytes','ports','message_roundtrips','reserved'),values))
+                        ('magic','complete','phase','vm_allocations','verified_bytes','ports','message_roundtrips','signature_vectors'),values))
                     result['kernel_runtime_tests']['magic'] = hex(values[0])
-                    result['kernel_runtime_tests_passed'] = values[:2] == (0x524d58584e555431,1)
+                    result['kernel_runtime_tests_passed'] = values[:2] == (0x524d58584e555431,1) and values[7]==30
                 if name in ('_kmem_crypto_init','_register_crypto_functions'):
                     inspect_crypto(rsp,sym,result)
                 if name == '_Assert':
@@ -483,7 +489,7 @@ def execute(kernel, record, out, qemu, clang):
                                      '%' not in panic_format[:-len(' @%s:%d')])
                         length = 336 if fault else 16 if plain else 0
                         block = bytes.fromhex(rsp.command(f'm{int(regs["sp"],16):x},{length:x}')) if length else b''
-                        values = struct.unpack('<5Q',block[:40]) if fault else struct.unpack('<2Q',block) if plain else ()
+                        values = struct.unpack('<5Q',block[:40]) if fault else plain_panic_arguments(block) if plain else ()
                         result['panic_stack_argument_words'] = [hex(v) for v in values]
                         result['panic_stack_source_strings'] = [image_cstring(data,report['segments'],v) for v in values]
                         if fault:

@@ -187,5 +187,15 @@ model matching. It runs after the original enabling of IRQs and MAC policy setup
 before the unchanged Image4 guard. It checks eight wired allocation/free cycles
 with zero-fill and data verification, plus private kernel-port message queue
 roundtrips using the normal send/receive/destruction paths. A small public-count
-record is read by the debugger; no message-signature checks are skipped. Native
-execution of this new hook is pending separately from the proven crypto result.
+record is read by the debugger; no message-signature checks are skipped.
+Run39777726707 completed the hook:8 allocation/free cycles,851968 bytes verified,
+4 private ports and8 actual kernel message roundtrips. Its IRQ-enabled phase
+and actual function return were confirmed. It then hit the unchanged Image4
+guard, with img4if=0 and amfi=0. This does not verify userspace IPC, blocking
+between threads, scheduler switching or interrupt delivery. The next independent
+build39780973901 completed two fresh-entropy QEMU boots with identical passing
+VM/IPC counters and the same Image4 guard. Its19683072-byte unstripped Mach-O
+is bit-identical to independent build39777726707:
+SHA2562d883d9aedeb556c7d969ee050fd8b2ab165330e02bcde96a921eee0b8bdb860.
+Different bootstrap stack VAs show runtime ASLR differed. Arbitrary GPRs,
+unrecognized panic argument blocks and unused stack slots are not exported.

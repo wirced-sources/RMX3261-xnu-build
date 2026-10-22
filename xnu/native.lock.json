@@ -64,5 +64,17 @@
     "repository": "https://github.com/PureDarwin/iig-tools",
     "commit": "28010c688caab7eb5400b9c98faa5b1e538e0108",
     "reason": "Uses FNV-1a instead of Apple's RPC method IDs; ignores trailing Clang arguments. Not an ABI-compatible replacement."
+  },
+  "image4_verifier": {
+    "repository": "https://github.com/acidanthera/OpenCorePkg",
+    "commit": "25d02c8d051dc2e9d9166b5a3b343ec5b77104cc",
+    "archive_bytes": 19128710,
+    "archive_sha256": "db71866f1b4d7f2606513e721b0dbe19c749fe75f6e124790b87ba362d9993d7",
+    "subset": "libDER and libDERImg4 only; no UEFI policy or digest override",
+    "licenses": [
+      "APSL-2.0",
+      "BSD"
+    ],
+    "policy": "closed QEMU test root/chain; never registered as Image4/AMFI"
   }
 }
