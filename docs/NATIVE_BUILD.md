@@ -131,3 +131,45 @@ aperture omits alignment gaps. The UMS512 patch reserves up to one twig per PTOV
 entry in both the aperture bound and its L1 allocation, preserving the assertion
 and page protections. The QEMU ADT includes an empty /defaults node so pmap uses
 its own default ASID count, without inventing hardware limits.
+
+## Portable crypto integration (native runtime verification pending)
+
+Run39767993309 verified the old failure exactly: PC0xfffffe0007b97060,
+instruction0xf940a908 (LDR X8,[X8,#0x150]), X8=0, FAR0x150, ESR0x96000005
+(read translation fault at level1). g_crypto_funcs and crypto_init were both0;
+register_crypto_functions was never entered before kmem_crypto_init. Thus the
+callback table is absent. Instruction bytes match the audited kernel. A QEMU
+XML namespace issue prevented the optional page-table walk; that inspector is
+corrected separately. No page-table walk result is inferred from the failure.
+
+The new platform adapter uses the SHA256 HMAC_DRBG implementation from the
+[official BearSSL0.6 release](https://www.bearssl.org/), pinned by size/SHA256 in
+native.lock.json. Only the selected RNG/hash/HMAC C files are copied into an
+isolated build tree, retaining the MIT notices. No Apple corecrypto implementation
+is redistributed. Its original interfaces and registration order were examined.
+
+The startup callback runs at EARLY_BOOT/FIRST, before kmem_crypto_init at MIDDLE.
+It registers the genuine XNU PRNG callbacks and crypto table. The master consumes
+XNU's existing conditioned bootloader seed, rejects short/uninitialized input,
+mixes the nonce and domain, and uses a mutex. Fresh entropy comes through XNU's
+original health-tested entropy_provide callback; errors are fatal. No timestamp
+or fixed test seed is used as live entropy. Contexts for private KMEM RNGs are
+160 bytes and generate without locks, allocation or global RNG calls. Uniform
+values use rejection sampling. Each generation request is bounded to64KiB and
+the2^48 request limit is enforced, including after untrusted reseed input.
+
+The adapter also supplies actual MD5/SHA1/SHA256/SHA384/SHA512 and HMAC functions
+with the original context ABI, constant-time tag comparison, and non-destructive
+digest finalization. Legacy hash algorithms remain for existing ABI consumers;
+the DRBG always uses SHA256. Cipher, AEAD and RSA capabilities remain absent;
+they are not replaced with success stubs. This is a capability subset, not a
+complete corecrypto replacement or FIPS-validated module. It currently supports
+only the explicit MAX_CPUS=1 profile and refuses an accidental SMP build.
+
+The native build executes tests/crypto_rng_kat.c using the actual portable adapter
+before compiling XNU. The kernel startup itself additionally checks all five
+digest known answers, RFC4231 HMAC generation/verification and a negative tag,
+and the [NIST HMAC_DRBG worked example](https://csrc.nist.gov/CSRC/media/Projects/Cryptographic-Standards-and-Guidelines/documents/examples/HMAC_DRBG.pdf)
+before publishing any callbacks. Passing these tests is not a security audit of
+the new adapter or proof of later kernel runtime. Live seeds/DRBG states are
+never printed by the debugger inspection.

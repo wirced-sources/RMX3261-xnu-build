@@ -211,7 +211,8 @@ class RSP:
                     raise ValueError('QEMU target XML exceeds bound')
                 if packet[0] == 'l':
                     break
-            root = ET.fromstring(xml)
+            # QEMU9.2 target.xml uses xi:include without a namespace declaration.
+            root = ET.fromstring(xml.replace('xi:include','include'))
             for child in root.iter():
                 if child.tag.endswith('include'):
                     pending.append(child.attrib['href'])
@@ -399,13 +400,14 @@ def execute(kernel, record, out, qemu, clang):
             names = ('_arm_vm_init','_pmap_bootstrap','_kernel_bootstrap','_vm_mem_bootstrap',
                      '_vm_mem_init','_zone_bootstrap','_kmem_bootstrap','_ipc_bootstrap',
                      '_ipc_init','_sched_init','_bsd_init','_register_crypto_functions',
+                     '_ums512_crypto_startup','_register_and_init_prng',
                      '_kmem_crypto_init','_Assert','_panic')
             boundaries = {sym[n]:n for n in names if n in sym}
             for address in boundaries:
                 if rsp.command(f'Z1,{address:x},4') != 'OK':
                     raise RuntimeError('QEMU init-boundary breakpoint unavailable')
             deadline = time.monotonic()+45
-            for _ in range(32):
+            for _ in range(64):
                 remaining = deadline-time.monotonic()
                 if remaining <= 0:
                     result['bounded_run_timeout'] = True

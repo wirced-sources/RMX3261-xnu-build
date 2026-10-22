@@ -45,6 +45,9 @@ PATCHES = (
     "xnu/patches/0005-non-pac-build-fixes.patch",
 )
 CAPSULE = (
+    "tools/crypto_check.py", "tests/crypto_rng_kat.c",
+    "tools/xnu_crypto.py", "xnu/platform/ums512/ums512_rng.h",
+    "xnu/platform/ums512/ums512_rng.c", "xnu/platform/ums512/ums512_crypto.c",
     "tools/xnu_native.py", "tools/xnu_config.py", "tools/macho_kernel.py", "tools/xnu_kernel_qemu.py", "tools/fdt.py", "tools/qemu_host.py", "xnu/native.lock.json",
     "xnu/sources.lock.json", "xnu/platform/ums512/UMS512.h",
     "xnu/platform/ums512/cpu_entry.h", "ci/xnu-native.yml",
@@ -90,6 +93,8 @@ def source(name):
 
 
 def fetch():
+    from xnu_crypto import archive
+    archive(fetch=True)
     _, sources = specs()
     for name, spec in sources.items():
         try:
@@ -154,6 +159,8 @@ def prepare(work):
     for patch in PATCHES:
         output("git", "-C", src, "apply", "--check", ROOT / patch)
         output("git", "-C", src, "apply", ROOT / patch)
+    from xnu_crypto import install as install_crypto
+    install_crypto(src)
     shutil.copyfile(ROOT / "xnu/platform/ums512/UMS512.h", src / "pexpert/pexpert/arm64/UMS512.h")
     (src / "osfmk/ums512").mkdir()
     shutil.copyfile(ROOT / "xnu/platform/ums512/cpu_entry.h", src / "osfmk/ums512/cpu_entry.h")
@@ -170,6 +177,9 @@ def prepare(work):
               "excluded_unsupported_apple_pmu": ["kpc", "kperf"],
               "upstream_master": "MASTER.arm64.MacOSX", "sdk_profile": "MacOSX",
               "features": after, "patches": {p: digest(ROOT / p) for p in PATCHES},
+              "portable_crypto": specs()[0]['portable_crypto'],
+              "crypto_adapters": {n: digest(ROOT / 'xnu/platform/ums512' / n)
+                                  for n in ('ums512_rng.h','ums512_rng.c','ums512_crypto.c')},
               "diagnostic_observer_included": False, "kernel_linked": False, "arm_init_executed": False}
     (work / "prepared.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print("PREPARED: full ARM64 configuration; protection features preserved; unsupported KPC/kperf excluded", flush=True)
@@ -299,6 +309,8 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
     (report / "toolchain.json").write_text(json.dumps({"xcode": version, "sdk": sdk, "tools": tools,
         "allocator_builtins_compiled": True}, indent=2) + "\n")
     src = prepare(work)
+    run([python3,ROOT/'tools/crypto_check.py',src/'libkern/ums512','--compiler',tools['clang']],
+        'crypto-known-answer',report,env,work,120)
     deps = {name: clone_work(name, work) for name in lock["sources"]}
     fake = work / "fakeroot"
     fake.mkdir()
