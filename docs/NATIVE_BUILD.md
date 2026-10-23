@@ -462,3 +462,31 @@ kernel. All new runtime evidence is separate from historical cold diagnostics.
   the kernel was changed. Timing panic native42 remains historical/open.
 - Independent socket selftest and tracer refinements are implemented/prepared,
   not target-tested. Complete local check.py91unit+8offlineQEMU PASS. Phone untouched.
+
+
+## 2026-10-22 — genuine BSD sockets and exact root-media boundary verified twice
+
+- Native45/run39841638879/job120043909921 completed SUCCESS, original make
+  install/strict Mach-O audit: 19916480 bytes,18segments,72926 validated local
+  relocations,0imports, SHA25695a666ac5eab62e7d33b323125f92c1b14b033808f566e532e07b247b0de13c3. Real arm_init0xfffffe0007bc7664
+  executed twice. Native43 audit/executions preserved in docs/history/native43.
+- Both boots repeat stock trust runtime and42firmware/30cache/25query/7policy
+  checks, targeted VM/IPC/GIC/timer/thread/RTC/UP tests, real AES/pthread/TCP/
+  domain/Skywalk/sysctl initialization. Actual AF_LOCAL stream and datagram
+  operations passed:2pairs/12messages/1180bytes,4 EWOULDBLOCK empty receives,
+  1 genuine stream EOF. No replacement socket services or userspace code.
+- Both returned loopattach and inittodr; entered IOFindBSDRoot0xfffffe0007b558dc.
+  Bounded static console markers now prove !BSD timeout then Waiting on matching
+  IOMedia/Apple_HFS. This is the original root selection with no root disk/image,
+  storage family or HFS backend integrated. No panic/fault in either45sec window;
+  no root mount/complete BSD/iOS. No blocked BSD stack unwind claim.
+- A late Platform Expert start return is a different IOService thread; the last
+  directly observed BSD initializer return remains inittodr. Live page walks
+  at root entry now prove g_crypto_funcs pointer, actual crypto table and both
+  CBC descriptors RO/NX; security pointer/table RO/NX checks also passed.
+- Source implementation remains unchanged after the verified export23863e5;
+  only evidence/docs updated. Native44 one-error failure and all old proofs are
+  retained. Final local check.py91unit+8QEMU PASS; all-hash HMAC/AES/RNG host
+  fatal ASan/UBSan PASS; IM4M33+4509 rejection regression PASS. Physical phone
+  untouched. Source preparation/remaining genuine HFS/storage/authentication
+  work is explicit, not presented as an unavailable universal closed component.

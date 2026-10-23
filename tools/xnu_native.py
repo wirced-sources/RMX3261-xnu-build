@@ -49,6 +49,7 @@ PATCHES = (
     "xnu/patches-ums512/0022-qemu-platform-personality.patch",
     "xnu/patches-ums512/0023-monolithic-pthread-registration.patch",
     "xnu/patches-ums512/0024-qemu-bsd-socket-validation.patch",
+    "xnu/patches-ums512/0025-qemu-root-storage.patch",
     "xnu/patches/0005-non-pac-build-fixes.patch",
 )
 CAPSULE = (
@@ -62,6 +63,7 @@ CAPSULE = (
     "xnu/platform/ums512/ums512_image4_runtime.c", "xnu/platform/ums512/ums512_trustcache.c",
     "xnu/platform/ums512/ums512_pl011.inc",
     "xnu/platform/ums512/QemuVirtPlatform.cpp",
+    "tools/xnu_storage.py", "xnu/platform/ums512/QemuRootStorage.cpp",
     "tools/xnu_pthread.py", "xnu/platform/ums512/ums512_pthread.c",
     "tools/crypto_check.py", "tests/crypto_rng_kat.c",
     "xnu/platform/ums512/ums512_aes.h", "xnu/platform/ums512/ums512_aes.c",
@@ -105,6 +107,8 @@ def source(name):
         candidates.append(ROOT / "out/m09-upstream/xnu")
     elif name == "bootstrap_cmds":
         candidates.append(ROOT / "out/m010-upstream/bootstrap_cmds")
+    elif name in ("hfs", "IOStorageFamily"):
+        candidates.append(OUT / "rootfs-sources" / name)
     for path in candidates:
         if path.exists():
             verify_source(path, sources[name])
@@ -183,6 +187,8 @@ def prepare(work):
         output("git", "-C", src, "apply", ROOT / patch)
     from xnu_pthread import install as install_pthread
     install_pthread(source('libpthread'),src)
+    from xnu_storage import install as install_storage
+    install_storage(source('IOStorageFamily'),source('hfs'),src)
     from xnu_crypto import install as install_crypto
     install_crypto(src)
     from image4_vendor import install as install_image4,CFILES
@@ -425,6 +431,14 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
               "CONCISE=0", "VERBOSE=NO"]
     from xnu_pthread import flags as pthread_flags
     native.extend(pthread_flags(src,sdk,fake))
+    from xnu_storage import flags as storage_flags, image as storage_image
+    native.extend(storage_flags(src,sdk,fake))
+    image_proof=storage_image(src)
+    (report/'root-image.json').write_text(json.dumps(image_proof,indent=2)+'\n')
+    print('ROOT IMAGE: '+json.dumps(image_proof),flush=True)
+    print('SDK HFS key header available: '+str(any((Path(sdk)/p/'AppleKeyStore/AppleKeyStoreFSServices.h').is_file()
+          for p in ('System/Library/Frameworks/Kernel.framework/Headers',
+                    'System/Library/Frameworks/Kernel.framework/PrivateHeaders','usr/local/include'))),flush=True)
     run(["make", "installhdrs", "-j2", *native], "xnu-headers", report, env, src)
     xbuild("Libsystem", "installhdrs", ["FAKEROOT_DIR=" + str(fake)])
     run(["xcodebuild", "installhdrs", "-sdk", "macosx", "-jobs", "2", "ARCHS=arm64", "VALID_ARCHS=arm64",

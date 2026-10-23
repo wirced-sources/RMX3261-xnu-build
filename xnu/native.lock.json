@@ -59,6 +59,18 @@
       "tag": "libplatform-292.120.1.0.1",
       "commit": "c7b97b198e8329813fd9ca7fe122a82c2cffc109",
       "tree": "dcb0d8b8ab9a6389d15562e14b44caafc56770ef"
+    },
+    "hfs": {
+      "repository": "https://github.com/apple-oss-distributions/hfs",
+      "tag": "hfs-627.100.6",
+      "commit": "31d5ec238dfab485e78a9a30b8b92d13e8914f03",
+      "tree": "52df595b48f607b79411a766b2f0d8b13acca8b9"
+    },
+    "IOStorageFamily": {
+      "repository": "https://github.com/apple-oss-distributions/IOStorageFamily",
+      "tag": "IOStorageFamily-302.140.2",
+      "commit": "609cbbdf9fa8fd5eae973d9135c7d44b47e6502e",
+      "tree": "c2f8a25a27c79a7e2b7651c392841bf6f82c2f38"
     }
   },
   "host": {

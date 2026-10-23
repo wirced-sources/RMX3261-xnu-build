@@ -17,6 +17,7 @@
 
 extern "C" {
 void ums512_qemu_finalize_cpu_topology(void);
+bool ums512_qemu_publish_root_storage(IOService *provider);
 struct ums512_platform_proof {
     uint64_t started,mmio_nubs,resource_ranges,rtc_identity;
     uint64_t rtc_reads,rtc_writes,rtc_tick_verified,unsupported_resource_requests;
@@ -130,6 +131,7 @@ bool RMXQemuPlatform::start(IOService *provider)
     if (!IOPlatformExpert::start(provider)) { return false; }
     if (!publish_qemu_rtc(this)) { panic("QEMU platform: IORTC service creation failed"); }
     ums512_qemu_finalize_cpu_topology();
+    if (!ums512_qemu_publish_root_storage(provider)) { panic("QEMU platform: real root media unavailable"); }
     registerService();
     ums512_platform_proof.started=1;
     IOLog("RMX-QEMU: Platform Expert and PL031 RTC ready\n");

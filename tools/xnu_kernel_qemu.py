@@ -553,6 +553,10 @@ def execute(kernel, record, out, qemu, clang):
                      '_audit_init','_domaininit','_dlil_init','_skywalk_init','_sysctl_mib_init',
                      '_tcp_init','_aes_encrypt_key128','_aes_encrypt_key',
                      '_ums512_bsd_socket_selftest','_loopattach','_net_init_run','_inittodr',
+                     '_ums512_hfs_register','_ums512_qemu_publish_root_storage',
+                     '_hfs_mountroot','_hfs_mount','_hfs_vnop_ioctl','_hfs_vfs_root',
+                     '_ums512_qemu_hfs_root_auth','_devfs_kernel_mount',
+                     '_bsd_utaskbootstrap','_bsd_ast','_load_init_program','_exec_activate_image',
                      '_ums512_pthread_register','_ums512_pthread_start','_pthread_kext_register',
                      '_pthread_init','__pthread_init',
                      '__ZN15RMXQemuPlatform5startEP9IOService',
@@ -589,6 +593,14 @@ def execute(kernel, record, out, qemu, clang):
                     result['returned_init_functions'].append(name[7:])
                 if name in ('_bsd_init','_IOFindBSDRoot'):
                     inspect_crypto(rsp,sym,result)
+                if '_ums512_storage_proof' in sym and name in ('_panic','other stop','_vfs_mountroot',
+                        'return:_vfs_mountroot','_ums512_qemu_hfs_root_auth','_devfs_kernel_mount','_load_init_program'):
+                    raw=bytes.fromhex(rsp.command(f'm{sym["_ums512_storage_proof"]:x},40'))
+                    result['storage_runtime']=dict(zip(('started','image_authenticated','reads','bytes_read',
+                        'writes_rejected','bounds_rejected','root_auth_ok','root_auth_denied'),struct.unpack('<8Q',raw)))
+                if name=='return:_vfs_mountroot':
+                    result['vfs_mountroot_return']=int(regs['x0'],16)&0xffffffff
+                    result['rootfs_mounted']=result['vfs_mountroot_return']==0
                 if '_ums512_bsd_socket_proof' in sym and name in ('return:_ums512_bsd_socket_selftest','_panic','_IOFindBSDRoot'):
                     raw=bytes.fromhex(rsp.command(f'm{sym["_ums512_bsd_socket_proof"]:x},40'))
                     result['bsd_socket_runtime']=dict(zip(('magic','complete','phase','pairs','messages',
