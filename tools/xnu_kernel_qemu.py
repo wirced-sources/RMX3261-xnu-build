@@ -556,6 +556,7 @@ def execute(kernel, record, out, qemu, clang):
                      '_ums512_hfs_register','_ums512_qemu_publish_root_storage',
                      '_hfs_mountroot','_hfs_mount','_hfs_vnop_ioctl','_hfs_vfs_root',
                      '_ums512_qemu_hfs_root_auth','_devfs_kernel_mount',
+                     '_ums512_qemu_rootfs_selftest',
                      '_bsd_utaskbootstrap','_bsd_ast','_load_init_program','_exec_activate_image',
                      '_ums512_pthread_register','_ums512_pthread_start','_pthread_kext_register',
                      '_pthread_init','__pthread_init',
@@ -610,6 +611,11 @@ def execute(kernel, record, out, qemu, clang):
                 if name=='return:_vfs_mountroot':
                     result['vfs_mountroot_return']=int(regs['x0'],16)&0xffffffff
                     result['rootfs_mounted']=result['vfs_mountroot_return']==0
+                if '_ums512_rootfs_proof' in sym and name in ('_panic','other stop',
+                        'return:_ums512_qemu_rootfs_selftest','_devfs_kernel_mount','_load_init_program'):
+                    raw=bytes.fromhex(rsp.command(f'm{sym["_ums512_rootfs_proof"]:x},40'))
+                    result['rootfs_vnode_runtime']=dict(zip(('magic','complete','reads','bytes',
+                        'eof_checks','write_denials','missing_denials','nonroot_auth_denials'),struct.unpack('<8Q',raw)))
                 if '_ums512_bsd_socket_proof' in sym and name in ('return:_ums512_bsd_socket_selftest','_panic','_IOFindBSDRoot'):
                     raw=bytes.fromhex(rsp.command(f'm{sym["_ums512_bsd_socket_proof"]:x},40'))
                     result['bsd_socket_runtime']=dict(zip(('magic','complete','phase','pairs','messages',

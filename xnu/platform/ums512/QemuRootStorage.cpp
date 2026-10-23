@@ -162,8 +162,9 @@ extern "C" int ums512_qemu_hfs_root_auth(dev_t device,int isRoot,int readOnly)
      */
     OSNumber *maj=rootMedia?OSDynamicCast(OSNumber,rootMedia->getProperty(kIOBSDMajorKey)):nullptr;
     OSNumber *min=rootMedia?OSDynamicCast(OSNumber,rootMedia->getProperty(kIOBSDMinorKey)):nullptr;
-    if (!isRoot || !readOnly || !rootMedia || rootMedia->isWritable() || !maj || !min ||
-        major(device)!=maj->unsigned32BitValue() || minor(device)!=min->unsigned32BitValue() || !authenticate_image()) {
+    if (device==NODEV || !isRoot || !readOnly || !rootMedia || rootMedia->isWritable() || !maj || !min ||
+        static_cast<uint32_t>(major(device))!=maj->unsigned32BitValue() ||
+        static_cast<uint32_t>(minor(device))!=min->unsigned32BitValue() || !authenticate_image()) {
         ums512_storage_proof.root_auth_denied++;
         return EAUTH;
     }

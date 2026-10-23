@@ -51,6 +51,8 @@ PATCHES = (
     "xnu/patches-ums512/0024-qemu-bsd-socket-validation.patch",
     "xnu/patches-ums512/0025-qemu-root-storage.patch",
     "xnu/patches-ums512/0026-mockfs-validate-media.patch",
+    "xnu/patches-ums512/0027-qemu-mounted-root-validation.patch",
+    "xnu/patches-ums512/0028-qemu-storage-personality.patch",
     "xnu/patches/0005-non-pac-build-fixes.patch",
 )
 CAPSULE = (
@@ -67,6 +69,7 @@ CAPSULE = (
     "tools/xnu_storage.py", "xnu/platform/ums512/QemuRootStorage.cpp",
     "xnu/platform/ums512/ums512_hfs_keys.h", "xnu/platform/ums512/ums512_hfs_keys.inc",
     "tests/test_root_image.py",
+    "xnu/platform/ums512/ums512_rootfs_test.c",
     "tools/xnu_pthread.py", "xnu/platform/ums512/ums512_pthread.c",
     "tools/crypto_check.py", "tests/crypto_rng_kat.c",
     "xnu/platform/ums512/ums512_aes.h", "xnu/platform/ums512/ums512_aes.c",
@@ -214,9 +217,11 @@ def prepare(work):
     (src/'bsd/ums512').mkdir()
     shutil.copyfile(ROOT/'xnu/platform/ums512/ums512_security.c',src/'bsd/ums512/ums512_security.c')
     shutil.copyfile(ROOT/'xnu/platform/ums512/ums512_socket_test.c',src/'bsd/ums512/ums512_socket_test.c')
+    shutil.copyfile(ROOT/'xnu/platform/ums512/ums512_rootfs_test.c',src/'bsd/ums512/ums512_rootfs_test.c')
     with (src/'bsd/conf/files').open('a',newline='\n') as config_stream:
         config_stream.write('\nbsd/ums512/ums512_security.c\toptional ums512\n')
         config_stream.write('\nbsd/ums512/ums512_socket_test.c\toptional ums512\n')
+        config_stream.write('\nbsd/ums512/ums512_rootfs_test.c\toptional ums512\n')
     (src / "osfmk/ums512").mkdir()
     shutil.copyfile(ROOT / "xnu/platform/ums512/cpu_entry.h", src / "osfmk/ums512/cpu_entry.h")
     shutil.copyfile(ROOT / 'xnu/platform/ums512/ums512_runtime.c',src / 'osfmk/ums512/ums512_runtime.c')

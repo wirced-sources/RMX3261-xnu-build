@@ -1,0 +1,16 @@
+--- a/iokit/KernelConfigTables.cpp
++++ b/iokit/KernelConfigTables.cpp
+@@ -43,6 +43,13 @@
+     "     'IOProbeScore'    = 1000:32;"
+     "   },"
++    "   {"
++    "     'IOClass'         = IOMediaBSDClient;"
++    "     'IOProviderClass' = IOMedia;"
++    "     'IOMatchCategory' = IOMediaBSDClient;"
++    "     'IOProbeScore'    = 30000:32;"
++    "     'IOResourceMatch' = IOBSD;"
++    "   },"
+ #endif
+     "   {"
+     "     'IOClass'         = IOPanicPlatform;"
+     "     'IOProviderClass' = IOPlatformExpertDevice;"

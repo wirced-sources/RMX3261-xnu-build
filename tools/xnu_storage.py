@@ -23,6 +23,28 @@ def replace(path, old, new, count=1):
     path.write_text(text.replace(old, new), encoding='utf-8', newline='\n')
 
 
+def modernize_quota_prototypes(path):
+    """Only join K&R parameter declarations; keep every original type/body."""
+    text=path.read_text()
+    pattern=r'^([A-Za-z_][\w \t*]*\bhfs_\w*|hfs_\w+)\(([\w, \t]+)\)\n((?:[ \t]+[^(){};\n]+;\n)+)\{'
+    def convert(match):
+        names=[name.strip() for name in match[2].split(',')]
+        declarations={}
+        for line in match[3].splitlines():
+            declaration=re.sub(r'\bregister\s+','',line.strip().removesuffix(';'))
+            name=re.search(r'(\w+)$',declaration)
+            if not name or name[1] in declarations:
+                raise ValueError('unexpected quota parameter declaration')
+            declarations[name[1]]=declaration
+        if set(names)!=set(declarations):
+            raise ValueError('quota definition/prototype parameter mismatch')
+        return match[1]+'('+', '.join(declarations[name] for name in names)+')\n{'
+    text,count=re.subn(pattern,convert,text,flags=re.M)
+    if not count:
+        raise ValueError('expected original K&R quota definitions absent')
+    path.write_text(text,encoding='utf-8',newline='\n')
+
+
 def install(storage, hfs, xnu):
     storage, hfs, xnu = Path(storage), Path(hfs), Path(xnu)
     target = xnu/'iokit/ums512_storage'
@@ -48,17 +70,27 @@ def install(storage, hfs, xnu):
     text = text.replace('#include <IOKit/storage/IOBlockStorageDriver.h>',
                         '/* This transport has no IOBlockStorageDriver provider. */')
     path.write_text(text, encoding='utf-8', newline='\n')
+    replace(path,'register UInt64','UInt64',count=2)
+    replace(path,'// Reprioritize a read or write request.',
+            'if (request.tier>3) { error=EINVAL; break; }\n\n            // Reprioritize a read or write request.')
+    for value in ('request.tier','bufattr_throttled(attributes.bufattr)'):
+        replace(path,'DK_TIER_TO_PRIORITY('+value+')',
+                'static_cast<IOStoragePriority>(DK_TIER_TO_PRIORITY('+value+') & UINT8_MAX)')
     prefix = '''/* Original external-kernel-extension header context. */
 #undef BSD_KERNEL_PRIVATE
 #undef MACH_KERNEL_PRIVATE
 #undef MACH_KERNEL
 #define XNU_KERNEL_PRIVATE 1
+#ifndef _FORTIFY_SOURCE_STRICT
+#define _FORTIFY_SOURCE_STRICT 1
+#endif
 #include <string.h>
-#ifndef XNU_USE_CHK_BUILTIN
+#if !XNU_USE_CHK_BUILTIN(memcpy) || !_FORTIFY_SOURCE_STRICT
 #error Genuine XNU string fortify header required
 #endif
+#include <libkern/sysctl.h>
 #undef XNU_KERNEL_PRIVATE
-#define XNU_KERNEL_PRIVATE 0 /* Original external-kext type visibility. */
+/* Original external-kext type visibility; strict string macros stay active. */
 #include <TargetConditionals.h>
 '''
     for name in STORAGE:
@@ -79,6 +111,10 @@ def install(storage, hfs, xnu):
     units = re.findall(r'/\* (\w+\.(?:c|cpp)) in Sources \*/', phase)
     if len(units) != 39 or len(set(units)) != 39:
         raise ValueError('pinned HFS kernel source phase changed')
+    absent=[unit for unit in units if not (hfs/'core'/unit).is_file()]
+    if absent!=['hfs_key_roll.c']:
+        raise ValueError('unexpected unpublished HFS sources: '+str(absent))
+    units.remove('hfs_key_roll.c')
     dest = xnu/'bsd/ums512_hfs'
     dest.mkdir()
     for directory in ('core', 'hfs_encodings'):
@@ -120,12 +156,20 @@ def install(storage, hfs, xnu):
 #if !CONFIG_PROTECT
 #error Content protection must remain enabled
 #endif
-#include <libkern/sysctl.h>
+#if HFS_CONFIG_KEY_ROLL
+#error This published HFS tree has no key-roll implementation
+#endif
 #define sysctlbyname kernel_sysctlbyname /* Genuine XNU kext export alias. */
 #include "core/hfs_cprotect.h"
 '''
     for unit in units:
-        (dest/unit).write_text(prefix+f'#include "core/{unit}"\n', newline='\n')
+        checks=''
+        if unit=='hfs_catalog.c':
+            checks='''_Static_assert(sizeof(FndrDirInfo)==16 && sizeof(FndrFileInfo)==16 && sizeof(FndrOpaqueInfo)==16,"Finder field sizes");
+_Static_assert(__builtin_offsetof(HFSPlusCatalogFolder,finderInfo)==__builtin_offsetof(HFSPlusCatalogFolder,userInfo)+16,"Folder Finder adjacency");
+_Static_assert(__builtin_offsetof(HFSPlusCatalogFile,finderInfo)==__builtin_offsetof(HFSPlusCatalogFile,userInfo)+16,"File Finder adjacency");
+'''
+        (dest/unit).write_text(prefix+f'#include "core/{unit}"\n'+checks, newline='\n')
     # In the monolithic build this is not a separately loaded/unloadable kext.
     # Retain real mount counters while omitting only dynamic kext self-retains.
     for call in ('OSKextRetainKextWithLoadTag(OSKextGetCurrentLoadTag());',
@@ -147,6 +191,50 @@ int hfs_is_ejectable(const char *cdev_name)''')
     replace(dest/'core/hfs_iokit.cpp', '#include "hfs_cnode.h"',
             '#include "hfs_cnode.h"\n#include "../hfs_encodings/hfs_encodings_internal.h"')
     replace(dest/'core/hfs_search.c','vp->v_type == VDIR','vnode_vtype(vp) == VDIR')
+    modernize_quota_prototypes(dest/'core/hfs_quota.c')
+    replace(dest/'core/hfs_cprotect.h','cp_key_class_t *class);','cp_key_class_t *class_out);')
+    replace(dest/'core/hfs_vfsops.c','(cp_lock_state_t)data','(cp_lock_state_t)(uintptr_t)data')
+    replace(dest/'core/hfs_vnops.c','fp->ff_size <= hfsmp->hfs_defrag_max',
+            'fp->ff_size >= 0 && (uint64_t)fp->ff_size <= hfsmp->hfs_defrag_max')
+    path=dest/'core/hfs_attrlist.c'
+    text=path.read_text()
+    for name in ('readdirattr','getattrlistbulk'):
+        pattern=r'hfs_vnop_'+name+r'\(ap\)\n\s+struct vnop_'+name+r'_args /\* \{.*?\} \*/ \*ap;'
+        text,count=re.subn(pattern,'hfs_vnop_'+name+'(struct vnop_'+name+'_args *ap)',text,flags=re.S)
+        if count!=1:
+            raise ValueError('legacy HFS vnode signature changed')
+    path.write_text(text,encoding='utf-8',newline='\n')
+    # The public tree does not define its private CP_ROOT_CRYPTOG1 flag or
+    # publish file-key services. Refuse every protected-volume mount before
+    # interpreting that unavailable metadata; never guess a crypto generation.
+    path=dest/'core/hfs_vfsutils.c'
+    text=path.read_text()
+    start=text.index('\t/* At this point, if the mount point flag is set, we can enable it. */')
+    end=text.index('\t/*\n\t * Establish a metadata allocation zone.',start)
+    text=text[:start]+'''\t/* Missing real file-key provider: all protected volumes fail closed. */
+\tif (vfs_flags(hfsmp->hfs_mp) & MNT_CPROTECT) {
+\t\tretval = ENXIO;
+\t\tgoto ErrorExit;
+\t}
+
+'''+text[end:]
+    path.write_text(text,encoding='utf-8',newline='\n')
+    # Aligned output temporaries preserve all original allocator results while
+    # avoiding uint32_t pointers to packed on-disk extent members.
+    path=dest/'core/VolumeAllocation.c'
+    text=path.read_text()
+    pattern=r'(err = |return )(BlockFind\w+)\(([^;]*&extent->startBlock[^;]*&extent->blockCount[^;]*)\);'
+    def aligned(match):
+        args=match[3].replace('&extent->startBlock','&rmx_start').replace('&extent->blockCount','&rmx_count')
+        returning=match[1]=='return '
+        return '{ uint32_t rmx_start=extent->startBlock,rmx_count=extent->blockCount;\n'+\
+               ('OSErr rmx_result = ' if returning else 'err = ')+match[2]+'('+args+');\n'+\
+               'extent->startBlock=rmx_start; extent->blockCount=rmx_count; '+\
+               ('return rmx_result; ' if returning else '')+'}'
+    text,count=re.subn(pattern,aligned,text)
+    if count!=9 or '&extent->' in text:
+        raise ValueError('packed HFS allocator output sites changed: '+str(count))
+    path.write_text(text,encoding='utf-8',newline='\n')
     replace(dest/'core/hfs_readwrite.c','iotypeflag = (uint32_t) ap->a_data;',
             'iotypeflag = (uint32_t)(uintptr_t) ap->a_data;')
     # Finder fields are two adjacent 16-byte records. Keep strict fortify by
@@ -157,6 +245,9 @@ int hfs_is_ejectable(const char *cdev_name)''')
     text,count=re.subn(pattern,r'bcopy(\1, &\2userInfo, 16);\n\tbcopy((const unsigned char *)(\1)+16, &\2finderInfo, 16);',text)
     if count!=4:
         raise ValueError('HFS Finder metadata copy sites changed: '+str(count))
+    text=text.replace('bcopy(&crp->userInfo, attrp->ca_finderinfo, 32);',
+        'bcopy(&crp->userInfo, attrp->ca_finderinfo, 16);\n'+
+        '\tbcopy(&crp->finderInfo, attrp->ca_finderinfo+16, 16);')
     path.write_text(text,encoding='utf-8',newline='\n')
     replace(dest/'core/hfs_readwrite.c', '\tswitch (ap->a_command) {', '''\tswitch (ap->a_command) {
     case FSIOC_KERNEL_ROOTAUTH: {
@@ -189,7 +280,9 @@ def flags(xnu, sdk, exported):
     result=[]
     for unit in (*units['hfs'], *(n+'.cpp' for n in (*STORAGE, 'QemuRootStorage'))):
         obj=Path(unit).stem+('.cpo' if unit.endswith('.cpp') else '.o')
-        result.append(obj+'_CFLAGS_ADD='+args+' -Wall -Wextra -Wno-missing-field-initializers')
+        result.append(obj+'_CFLAGS_ADD='+args+' -Wall -Wextra -Wno-missing-field-initializers'+
+                      ' -Wno-error=unused-parameter -Wno-error=deprecated-declarations'+
+                      ' -Wno-error=nullability-completeness -Wno-error=nullability-completeness-on-arrays')
         # Restore the original module warning profile (Wall/W), retaining
         # Werror, typed allocators, fortify, stack checks and all native ABI flags.
         result.append(obj+'_CFLAGS_RM=-Weverything')
