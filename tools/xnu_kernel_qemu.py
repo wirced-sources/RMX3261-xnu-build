@@ -483,7 +483,7 @@ def execute(kernel, record, out, qemu, clang):
         '-gdb',f'tcp:127.0.0.1:{port}','-kernel',str(image),'-device',f'loader,file={out / "kernel.physical.bin"},addr={header_pa:#x},force-raw=on'],stdout=log,stderr=log)
     result = {'kernel_sha256':report['sha256'],'arm_init_executed':False,
               'kernel_boot_completed':False,'hardware_verified':False,'stops':[],
-              'observation_window_seconds':45,'boundary_limit':256,
+              'observation_window_seconds':90 if '_ums512_storage_proof' in sym else 45,'boundary_limit':256,
               'boot_arguments':command_line.decode('ascii'),
               'virtual_timer_fdt_binding':timer_binding,'virtual_cpu_fdt_binding':cpu_binding,
               'virtual_uart_fdt_binding':uart,
@@ -555,6 +555,7 @@ def execute(kernel, record, out, qemu, clang):
                      '_ums512_bsd_socket_selftest','_loopattach','_net_init_run','_inittodr',
                      '_ums512_hfs_register','_ums512_qemu_publish_root_storage',
                      '_hfs_mountroot','_hfs_mount','_hfs_vnop_ioctl','_hfs_vfs_root',
+                     '_hfs_mounthfsplus','_dkstrategy',
                      '_ums512_qemu_hfs_root_auth','_devfs_kernel_mount',
                      '_ums512_qemu_rootfs_selftest',
                      '_bsd_utaskbootstrap','_bsd_ast','_load_init_program','_exec_activate_image',
@@ -568,7 +569,7 @@ def execute(kernel, record, out, qemu, clang):
             for address in boundaries:
                 if rsp.command(f'Z1,{address:x},4') != 'OK':
                     raise RuntimeError('QEMU init-boundary breakpoint unavailable')
-            deadline = time.monotonic()+45
+            deadline = time.monotonic()+result['observation_window_seconds']
             for _ in range(256):
                 remaining = deadline-time.monotonic()
                 if remaining <= 0:
@@ -592,6 +593,12 @@ def execute(kernel, record, out, qemu, clang):
                 result['stops'].append({'boundary':name,**control_registers(regs)})
                 if name.startswith('return:'):
                     result['returned_init_functions'].append(name[7:])
+                if name=='_ums512_qemu_hfs_root_auth':
+                    result.setdefault('root_auth_calls',[]).append(dict(
+                        device=int(regs['x0'],16)&0xffffffff,
+                        is_root=bool(int(regs['x1'],16)&0xffffffff),read_only=bool(int(regs['x2'],16)&0xffffffff)))
+                if name=='return:_ums512_qemu_hfs_root_auth':
+                    result.setdefault('root_auth_returns',[]).append(int(regs['x0'],16)&0xffffffff)
                 if name in ('_bsd_init','_IOFindBSDRoot'):
                     inspect_crypto(rsp,sym,result)
                 if '_ums512_storage_proof' in sym and name in ('_panic','other stop','_vfs_mountroot',
@@ -768,6 +775,12 @@ def execute(kernel, record, out, qemu, clang):
                     # address for the next function rather than retaining a
                     # stale return name after its hardware breakpoint is gone.
                     boundaries.pop(int(regs['pc'],16),None)
+                    if name=='return:_ums512_qemu_hfs_root_auth' and result['root_auth_returns'][-1]:
+                        # Observe the real successful BSD root-auth call after
+                        # the deliberately rejected native selftest requests.
+                        address=sym['_ums512_qemu_hfs_root_auth']
+                        if rsp.command(f'Z1,{address:x},4')!='OK':
+                            raise RuntimeError('root-auth observation breakpoint unavailable')
                 elif name not in ('_kernel_bootstrap','_kernel_bootstrap_thread'):
                     # A function entry does not prove initialization completed.
                     # Observe its real caller return address without changing LR.
@@ -796,6 +809,7 @@ def execute(kernel, record, out, qemu, clang):
         result['error'] = str(error)
         raise
     finally:
+        result['bsd_startup_returned']='_bsd_init' in result['returned_init_functions']
         proc.terminate()
         try:
             proc.wait(timeout=5)

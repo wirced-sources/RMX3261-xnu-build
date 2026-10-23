@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <sys/types.h>
+#include <sys/param.h>
 #include <sys/errno.h>
 #include <sys/conf.h>
 #include <IOKit/IOLib.h>

@@ -94,7 +94,11 @@ def install(storage, hfs, xnu):
 #include <TargetConditionals.h>
 '''
     for name in STORAGE:
-        (target/(name+'.cpp')).write_text(prefix+'#define UMS512_IMMUTABLE_MEDIA 1\n'+
+        # IOUserClient's native statistics header needs the full core OSKext
+        # declarations. Compile that one built-in provider in native context,
+        # preserving IOKITSTATS and its real privilege checks.
+        context='#include <TargetConditionals.h>\n' if name=='IOBlockStorageDevice' else prefix
+        (target/(name+'.cpp')).write_text(context+'#define UMS512_IMMUTABLE_MEDIA 1\n'+
                                        '#include "vendor/'+name+'.cpp"\n', newline='\n')
     for name in ('LICENSE', 'APPLE_LICENSE'):
         if (storage/name).is_file():
@@ -191,6 +195,8 @@ int hfs_is_ejectable(const char *cdev_name)''')
     replace(dest/'core/hfs_iokit.cpp', '#include "hfs_cnode.h"',
             '#include "hfs_cnode.h"\n#include "../hfs_encodings/hfs_encodings_internal.h"')
     replace(dest/'core/hfs_search.c','vp->v_type == VDIR','vnode_vtype(vp) == VDIR')
+    replace(dest/'core/hfs_search.c','hfs_vnop_search(ap)\n\tstruct vnop_searchfs_args *ap; /*',
+            'hfs_vnop_search(struct vnop_searchfs_args *ap)\n\t/*')
     modernize_quota_prototypes(dest/'core/hfs_quota.c')
     replace(dest/'core/hfs_cprotect.h','cp_key_class_t *class);','cp_key_class_t *class_out);')
     replace(dest/'core/hfs_vfsops.c','(cp_lock_state_t)data','(cp_lock_state_t)(uintptr_t)data')
