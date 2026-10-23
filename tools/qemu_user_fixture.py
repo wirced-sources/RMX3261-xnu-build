@@ -1,0 +1,80 @@
+"""Build owned, deliberately unsigned ARM64 init for an actual exec-denial test.
+
+Not Apple launchd, a signing provider, or a runnable-userland claim. If security
+unexpectedly permits this binary, its first instruction traps rather than
+running an unbounded program. No private keys or Apple binaries are inputs.
+"""
+from pathlib import Path
+import hashlib
+import json
+import struct
+import subprocess
+
+ROOT=Path(__file__).resolve().parents[1]
+
+
+def audit(data):
+    if not 32<=len(data)<=256*1024:
+        raise ValueError('unsigned test executable size outside profile')
+    magic,cpu,sub,kind,count,size,_,reserved=struct.unpack_from('<8I',data)
+    if (magic,cpu,sub,kind,reserved)!=(0xfeedfacf,0x100000c,0,2,0) or count>32 or size>len(data)-32:
+        raise ValueError('expected owned plain ARM64 MH_EXECUTE')
+    at,end,entry,segments=32,32+size,None,[]
+    for _ in range(count):
+        if at+8>end:
+            raise ValueError('truncated test executable command')
+        command,length=struct.unpack_from('<II',data,at)
+        if length<8 or length%8 or length>end-at:
+            raise ValueError('invalid test executable command length')
+        if command==0x19:
+            if length<72:
+                raise ValueError('short test executable segment')
+            va,mem,off,stored,maximum,initial,sections,_=struct.unpack_from('<4Q4I',data,at+24)
+            if length!=72+80*sections or off>len(data) or stored>len(data)-off or stored>mem or initial&~maximum or initial&6==6:
+                raise ValueError('invalid test executable segment extent/protection')
+            segments.append((va,off,stored,initial))
+        elif command==5:
+            if length!=288 or entry is not None or struct.unpack_from('<II',data,at+8)!=(6,68):
+                raise ValueError('invalid ARM_THREAD_STATE64 test entry')
+            entry=struct.unpack_from('<Q',data,at+272)[0]
+        elif command==0xb:
+            if length!=80 or struct.unpack_from('<18I',data,at+8)[5]:
+                raise ValueError('undefined imports in unsigned test executable')
+        elif command in (0x1d,0xc,0xe,0x18,0x80000018,0x8000001f,0x80000023,0x21,0x2c,0x80000028):
+            raise ValueError('test binary must have no signature, dyld dependency, encryption or LC_MAIN')
+        at+=length
+    if at!=end or entry is None or not 0x4000<=entry<0x0000800000000000:
+        raise ValueError('missing/invalid user test entry point')
+    owner=next((s for s in segments if s[3]&4 and s[0]<=entry and entry+4<=s[0]+s[2]),None)
+    if not owner or entry%4:
+        raise ValueError('test entry outside executable file-backed bytes')
+    offset=owner[1]+entry-owner[0]
+    if struct.unpack_from('<I',data,offset)[0]!=0xd420a2a0:
+        raise ValueError('test entry must be BRK #0x515')
+    return dict(bytes=len(data),sha256=hashlib.sha256(data).hexdigest(),architecture='ARM64',
+                entry=hex(entry),unsigned=True,apple_userland=False,entry_is_trap=True)
+
+
+def build(work,staging,clang,ld):
+    work,staging=Path(work).resolve(),Path(staging).resolve()
+    for path in (work,staging):
+        path.relative_to((ROOT/'out').resolve())
+    directory=work/'unsigned-init-fixture'
+    directory.mkdir()
+    source,obj=directory/'init.s',directory/'init.o'
+    target=staging/'sbin/launchd'
+    if target.exists() or target.is_symlink():
+        raise ValueError('refusing to overwrite executable fixture')
+    source.write_text('.section __TEXT,__text,regular,pure_instructions\n.p2align 2\n'+
+                      '.globl _start\n_start:\n brk #0x515\n b _start\n',encoding='utf-8',newline='\n')
+    commands=([clang,'-target','arm64-apple-macos11','-c',str(source),'-o',str(obj)],
+              [ld,'-arch','arm64','-static','-e','_start','-platform_version','macos','11.0','14.5',
+               '-no_adhoc_codesign','-no_uuid','-o',str(target),str(obj)])
+    for command in commands:
+        result=subprocess.run(command,capture_output=True,text=True,timeout=60)
+        if result.returncode:
+            raise RuntimeError('owned unsigned init build failed: '+(result.stdout+result.stderr)[-4000:])
+    proof=audit(target.read_bytes())
+    target.chmod(0o755)
+    (directory/'audit.json').write_text(json.dumps(proof,indent=2)+'\n',encoding='utf-8',newline='\n')
+    return proof

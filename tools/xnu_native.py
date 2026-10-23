@@ -68,7 +68,7 @@ CAPSULE = (
     "xnu/platform/ums512/QemuVirtPlatform.cpp",
     "tools/xnu_storage.py", "xnu/platform/ums512/QemuRootStorage.cpp",
     "xnu/platform/ums512/ums512_hfs_keys.h", "xnu/platform/ums512/ums512_hfs_keys.inc",
-    "tests/test_root_image.py",
+    "tests/test_root_image.py", "tools/qemu_user_fixture.py", "tests/test_user_fixture.py",
     "xnu/platform/ums512/ums512_rootfs_test.c",
     "tools/xnu_pthread.py", "xnu/platform/ums512/ums512_pthread.c",
     "tools/crypto_check.py", "tests/crypto_rng_kat.c",
@@ -448,7 +448,9 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
     print('SDK HFS key header available: '+str(any((Path(sdk)/p/'AppleKeyStore/AppleKeyStoreFSServices.h').is_file()
           for p in ('System/Library/Frameworks/Kernel.framework/Headers',
                     'System/Library/Frameworks/Kernel.framework/PrivateHeaders','usr/local/include'))),flush=True)
-    image_proof=storage_image(src)
+    run([python3,'-m','unittest','discover','-s',ROOT/'tests','-p','test_user_fixture.py'],
+        'unsigned-init-negative',report,env,ROOT,60)
+    image_proof=storage_image(src,tools['clang'],tools['ld'])
     (report/'root-image.json').write_text(json.dumps(image_proof,indent=2)+'\n')
     print('ROOT IMAGE: '+json.dumps(image_proof),flush=True)
     run(["make", "installhdrs", "-j2", *native], "xnu-headers", report, env, src)

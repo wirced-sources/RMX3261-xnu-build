@@ -341,7 +341,7 @@ def validate_image(data):
     return {'block_bytes':block_size,'allocation_blocks':blocks,'attributes':attrs}
 
 
-def image(xnu):
+def image(xnu,clang,ld):
     """Create only owned test image files; never pass a device node to a formatter.
 
     macOS newfs_hfs accepts device basenames, not regular-file destinations.
@@ -356,6 +356,8 @@ def image(xnu):
     (staging/'dev').mkdir()
     (staging/'sbin').mkdir()
     (staging/'root-proof.txt').write_text('Owned QEMU laboratory data; no Apple userland.\n')
+    from qemu_user_fixture import build as build_unsigned_init
+    executable=build_unsigned_init(target,staging,clang,ld)
     dmg, raw = target/'root.dmg', target/'root.cdr'
     if dmg.exists() or raw.exists():
         raise ValueError('refusing to overwrite a root image')
@@ -378,5 +380,7 @@ def image(xnu):
     (target/'root_image.s').write_text('.section __DATA_CONST,__const\n.p2align 14\n'+
         '.globl _ums512_root_image, _ums512_root_image_end\n_ums512_root_image:\n.incbin "'+str(disk)+'"\n'+
         '_ums512_root_image_end:\n', newline='\n')
-    return {'bytes':len(data), 'sha256':sha.hex(), 'format':'HFS+', 'content':'owned /dev, /sbin and root-proof.txt; no executable',
+    return {'bytes':len(data), 'sha256':sha.hex(), 'format':'HFS+',
+            'content':'owned marker and unsigned trap-only /sbin/launchd for mandatory exec-denial test',
+            'executable_fixture':executable,
             'geometry':geometry, 'embedded_in_kernel':True, 'readonly':True, 'apple_trust':False}

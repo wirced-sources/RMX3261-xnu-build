@@ -628,6 +628,10 @@ def execute(kernel, record, out, qemu, clang):
                 if name=='return:_vfs_mountroot':
                     result['vfs_mountroot_return']=int(regs['x0'],16)&0xffffffff
                     result['rootfs_mounted']=result['vfs_mountroot_return']==0
+                if '_ums512_exec_denial_proof' in sym and name in ('_Assert','_panic','_load_init_program'):
+                    raw=bytes.fromhex(rsp.command(f'm{sym["_ums512_exec_denial_proof"]:x},20'))
+                    result['actual_exec_denial_runtime']=dict(zip(('callbacks','regular_files','init_process','denied'),
+                                                                 struct.unpack('<4Q',raw)))
                 if '_ums512_rootfs_proof' in sym and name in ('_Assert','_panic','other stop',
                         'return:_ums512_qemu_rootfs_selftest','_devfs_kernel_mount','_load_init_program'):
                     raw=bytes.fromhex(rsp.command(f'm{sym["_ums512_rootfs_proof"]:x},40'))
@@ -840,9 +844,18 @@ def execute(kernel, record, out, qemu, clang):
                 result['rootfs_runtime_tests_passed']=True
                 if result.get('panic_format_from_audited_kernel'):
                     failure=result.get('first_process_exec_failure',{})
-                    result['expected_missing_init_boundary']=failure.get('path')=='/sbin/launchd' and failure.get('errno')==2
-                    if not result['expected_missing_init_boundary']:
+                    if '_ums512_exec_denial_proof' in sym:
+                        result['expected_unsigned_init_denial']=(failure.get('path')=='/sbin/launchd' and
+                            failure.get('errno')==80 and result.get('actual_exec_denial_runtime')==dict(
+                                callbacks=1,regular_files=1,init_process=1,denied=1))
+                        if not result['expected_unsigned_init_denial']:
+                            raise RuntimeError('actual unsigned init must reach the mandatory MAC callback and fail EAUTH')
+                    else:
+                        result['expected_missing_init_boundary']=failure.get('path')=='/sbin/launchd' and failure.get('errno')==2
+                    if not (result.get('expected_missing_init_boundary') or result.get('expected_unsigned_init_denial')):
                         raise RuntimeError('unexpected XNU panic after root mount; inspect recorded format/arguments')
+                elif '_ums512_exec_denial_proof' in sym:
+                    raise RuntimeError('actual unsigned init exec-denial boundary was not reached')
     except Exception as error:
         result['error'] = str(error)
         raise

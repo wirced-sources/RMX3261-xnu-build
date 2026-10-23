@@ -490,3 +490,55 @@ kernel. All new runtime evidence is separate from historical cold diagnostics.
   fatal ASan/UBSan PASS; IM4M33+4509 rejection regression PASS. Physical phone
   untouched. Source preparation/remaining genuine HFS/storage/authentication
   work is explicit, not presented as an unavailable universal closed component.
+
+## 2026-10-23: genuine HFS/storage kernel and actual root-selection assertion
+
+The root build now pins IOStorageFamily-302.140.2 and hfs-627.100.6 from the
+same macos-135 source manifest. tools/xnu_storage.py installs original kernel
+units and creates an owned16MiB HFS+ image using hdiutil inside the isolated
+runner workspace. Raw image geometry/metadata is checked, then image bytes and
+the per-build SHA256 pin are embedded as read-only kernel data. No phone image,
+Apple userland, host disk, SDK export or artifact/cache upload is involved.
+Filesystem formatting metadata means image/kernel hashes vary across builds;
+each exact image pin belongs to its own kernel, rather than a reproduction claim.
+
+Native51/run39954278824/job120416102179 passed original make install and strict
+Mach-O audit:37411912 bytes,18segments,75834 checked local relocations,0imports,
+SHA256d255666b1ec3bafebdd8c01f5f7eb8e300311e9240cd90106091189421621a3a.
+Actual arm_init0xfffffe0008c4872c executed. Real HFS registration returned;
+VM/IPC/security/AF_LOCAL tests passed. IOFindBSDRoot reached the stock
+IOService::setRootMedia assertion requiring IOBlockStorageDriver's real class.
+No mounted root/file I/O/userspace is claimed for that run. Native52 therefore
+adds the genuine kernel-provider driver implementation, keeping the assertion.
+DriverKit's separate userspace provider is unavailable and not impersonated.
+
+CONFIG_PROTECT, MAC and code-signing checks remain enabled. The actual SDK lacks
+AppleKeyStoreFSServices.h, and the public HFS tree lacks key-roll source and a
+private generation flag. Internal requests use genuine XNU key-buffer types;
+missing file-key operations and every protected-volume mount fail ENXIO.
+No private ABI/constant/key is guessed. Root authentication verifies the actual
+immutable image SHA256 and exact BSD device/root/read-only state. This explicit
+QEMU trust domain is not Apple's APFS sealed root. Execution quarantine remains.
+
+New tests require genuine mounted HFS vnode read/EOF/EROFS/ENOENT/nonroot-auth
+operations, not just service publication. Both boot trials run even on failure;
+the workflow still fails if either fails. Assertion/abort evidence takes priority
+over secondary incomplete-counter errors. Root profile observation is bounded
+at90sec; guest timers/watchdog unchanged. See ROOT_STORAGE.md and the preserved
+docs/history/native51 audit/one trace. Older verified runtime45 remains separate.
+
+Native52/run39959208305 completed full make install and strict audit, then both
+real boots mounted HFS root. Kernel37499816B/18segments/76488local relocations/
+0imports, SHA f7d4a951b0374daa04bdd78e2928b07b4c48eff06ce3ab180acbae78573e3e61.
+Real vfs_mountroot/auth/devfs/bsd_utaskbootstrap/bsd_init returned; vnode read47B,
+EOF/EROFS/ENOENT/nonroot-auth tests passed. The first init exec reached real
+load_init_program and failed ENOENT for absent /sbin/launchd. This is mounted
+root and completed bsd_init, not user execution or completed OS boot. Exact
+two traces/audit are current and retained in history/native52; native45 archived.
+
+The next image contains only an owned, deliberately unsigned trap-only ARM64
+init asset. A real Apple compiler/linker build is checked for plain MH_EXECUTE,
+file-backed trap entry and absent signature/dyld imports. Real init exec must
+reach mandatory MAC quarantine and fail EAUTH80; direct early callback selftests
+cannot satisfy the new counters. All security checks and execution quarantine
+remain unchanged. No Apple binary/key or external disk input is used.

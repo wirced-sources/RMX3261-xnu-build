@@ -9,6 +9,9 @@
 #include <sys/errno.h>
 #include <sys/codesign.h>
 #include <sys/trust_caches.h>
+#include <sys/proc.h>
+#include <sys/vnode.h>
+#include <os/atomic_private.h>
 #include <mach/vm_prot.h>
 #include <kern/debug.h>
 #include <libkern/section_keywords.h>
@@ -41,12 +44,26 @@ _Static_assert(sizeof(struct ums512_security_proof)==64,"public security proof l
 SECURITY_READ_ONLY_LATE(volatile struct ums512_security_proof) ums512_security_proof;
 SECURITY_READ_ONLY_LATE(static amfi_t) lab_amfi;
 static mac_policy_handle_t policy_handle;
+/* Mutable observations of real exec callbacks, separate from locked policy
+ * state. NULL-argument early selftests cannot increment these counters. */
+volatile struct ums512_exec_denial_proof {
+    uint64_t callbacks,regular_files,init_process,denied;
+} ums512_exec_denial_proof;
+_Static_assert(sizeof(struct ums512_exec_denial_proof)==32,"exec denial proof layout");
 
 static int deny_invalid(struct proc *p __unused) { return EPERM; }
-static int deny_exec(kauth_cred_t cred __unused,struct vnode *vp __unused,struct vnode *script __unused,
+static int deny_exec(kauth_cred_t cred,struct vnode *vp,struct vnode *script __unused,
     struct label *vl __unused,struct label *sl __unused,struct label *el __unused,
     struct componentname *cn __unused,u_int *flags __unused,void *attr __unused,size_t n __unused)
-{ return EAUTH; }
+{
+    if (cred && vp) {
+        os_atomic_inc(&ums512_exec_denial_proof.callbacks,relaxed);
+        if (vnode_isreg(vp)) { os_atomic_inc(&ums512_exec_denial_proof.regular_files,relaxed); }
+        if (proc_pid(current_proc())==1) { os_atomic_inc(&ums512_exec_denial_proof.init_process,relaxed); }
+        os_atomic_inc(&ums512_exec_denial_proof.denied,relaxed);
+    }
+    return EAUTH;
+}
 static int deny_signature(struct vnode *vp __unused,struct label *label __unused,cpu_type_t cpu __unused,
     struct cs_blob *blob __unused,unsigned *flags __unused,unsigned *signer __unused,
     int mode __unused,unsigned platform __unused,char **desc __unused,size_t *length __unused)
