@@ -595,9 +595,18 @@ def execute(kernel, record, out, qemu, clang):
                     inspect_crypto(rsp,sym,result)
                 if '_ums512_storage_proof' in sym and name in ('_panic','other stop','_vfs_mountroot',
                         'return:_vfs_mountroot','_ums512_qemu_hfs_root_auth','_devfs_kernel_mount','_load_init_program'):
-                    raw=bytes.fromhex(rsp.command(f'm{sym["_ums512_storage_proof"]:x},40'))
+                    raw=bytes.fromhex(rsp.command(f'm{sym["_ums512_storage_proof"]:x},80'))
                     result['storage_runtime']=dict(zip(('started','image_authenticated','reads','bytes_read',
-                        'writes_rejected','bounds_rejected','root_auth_ok','root_auth_denied'),struct.unpack('<8Q',raw)))
+                        'writes_rejected','bounds_rejected','root_auth_ok','root_auth_denied',
+                        'test_complete','test_reads','test_writes','test_bounds','test_access',
+                        'test_crypto_negative','test_auth_negative','reserved'),struct.unpack('<16Q',raw)))
+                    if result['storage_runtime']['test_complete'] and 'root_image_mappings' not in result:
+                        system=rsp.system_registers()
+                        begin,end=sym['_ums512_root_image'],sym['_ums512_root_image_end']
+                        result['root_image_mappings']=[inspect_mapping(rsp,address,system)
+                            for address in (begin,begin+(end-begin)//2,end-1)]
+                        result['root_image_ro_nx_samples_verified']=all(p.get('valid') and p.get('read_only') and
+                            p.get('privileged_execute_never') for p in result['root_image_mappings'])
                 if name=='return:_vfs_mountroot':
                     result['vfs_mountroot_return']=int(regs['x0'],16)&0xffffffff
                     result['rootfs_mounted']=result['vfs_mountroot_return']==0

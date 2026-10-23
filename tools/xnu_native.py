@@ -65,6 +65,8 @@ CAPSULE = (
     "xnu/platform/ums512/ums512_pl011.inc",
     "xnu/platform/ums512/QemuVirtPlatform.cpp",
     "tools/xnu_storage.py", "xnu/platform/ums512/QemuRootStorage.cpp",
+    "xnu/platform/ums512/ums512_hfs_keys.h", "xnu/platform/ums512/ums512_hfs_keys.inc",
+    "tests/test_root_image.py",
     "tools/xnu_pthread.py", "xnu/platform/ums512/ums512_pthread.c",
     "tools/crypto_check.py", "tests/crypto_rng_kat.c",
     "xnu/platform/ums512/ums512_aes.h", "xnu/platform/ums512/ums512_aes.c",
@@ -433,6 +435,10 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
     from xnu_pthread import flags as pthread_flags
     native.extend(pthread_flags(src,sdk,fake))
     from xnu_storage import flags as storage_flags, image as storage_image
+    run([python3,'-m','unittest','discover','-s',ROOT/'tests','-p','test_root_image.py'],
+        'root-image-negative',report,env,ROOT,60)
+    shutil.copyfile(Path(sdk)/'usr/include/TargetConditionals.h',
+                    src/'iokit/ums512_storage/include/TargetConditionals.h')
     native.extend(storage_flags(src,sdk,fake))
     print('SDK HFS key header available: '+str(any((Path(sdk)/p/'AppleKeyStore/AppleKeyStoreFSServices.h').is_file()
           for p in ('System/Library/Frameworks/Kernel.framework/Headers',

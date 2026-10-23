@@ -57,6 +57,8 @@ def install(storage, hfs, xnu):
 #ifndef XNU_USE_CHK_BUILTIN
 #error Genuine XNU string fortify header required
 #endif
+#undef XNU_KERNEL_PRIVATE
+#define XNU_KERNEL_PRIVATE 0 /* Original external-kext type visibility. */
 #include <TargetConditionals.h>
 '''
     for name in STORAGE:
@@ -84,9 +86,44 @@ def install(storage, hfs, xnu):
     for name in ('LICENSE', 'APPLE_LICENSE'):
         if (hfs/name).is_file():
             shutil.copyfile(hfs/name, dest/name)
-    # Keep actual CONFIG_PROTECT and its real access checks. No fake AKS header
-    # or success provider is installed. The actual SDK dependency is probed.
-    prefix += '#include "core/kext-config.h"\n#if !CONFIG_PROTECT\n#error Content protection must remain enabled\n#endif\n'
+    # Keep actual CONFIG_PROTECT and all access checks. The real SDK has no AKS
+    # header. Use native XNU buffer types and explicitly internal credentials;
+    # no invented Apple ABI/service table crosses the platform-function API.
+    for suffix in ('.h','.inc'):
+        name='ums512_hfs_keys'+suffix
+        shutil.copyfile(ROOT/'xnu/platform/ums512'/name,dest/'core'/name)
+    replace(dest/'core/hfs_iokit.h','#include <AppleKeyStore/AppleKeyStoreFSServices.h>',
+            '#include "ums512_hfs_keys.h"')
+    for unit in ('hfs_iokit.h','hfs_iokit.cpp','hfs_cprotect.c'):
+        path=dest/'core'/unit
+        text=path.read_text()
+        for old,new in (('struct aks_cred_s','struct rmx_hfs_key_cred'),
+                        ('aks_cred_t','rmx_hfs_key_cred_t'),
+                        ('struct aks_raw_key_s','cp_raw_key_s'),('aks_raw_key_t','cp_raw_key_t'),
+                        ('struct aks_wrapped_key_s','cp_wrapped_key_s'),('aks_wrapped_key_t','cp_wrapped_key_t'),
+                        ('AKS_RAW_KEY_WRAPPEDKEY','CP_RAW_KEY_WRAPPEDKEY')):
+            text=text.replace(old,new)
+        path.write_text(text,encoding='utf-8',newline='\n')
+    for field in ('inode','pid','uid','key_revision'):
+        replace(dest/'core/hfs_cprotect.c','access->'+field,'access->context.'+field)
+    replace(dest/'core/hfs_cprotect.c','access_in.key_revision','access_in.context.key_revision')
+    path=dest/'core/hfs_iokit.cpp'
+    text=path.read_text()
+    marker='// Interface with AKS'
+    if text.count(marker)!=1 or not text.rstrip().endswith('return ks->backup_key(access, wrapped_key_in, wrapped_key_out);\n}'):
+        raise ValueError('original unavailable key service boundary changed')
+    path.write_text(text.split(marker)[0]+'#include "ums512_hfs_keys.inc"\n',encoding='utf-8',newline='\n')
+    # HFS MacOS source normally leaves protection off in its external config.
+    # The native profile enables it: include the genuine private declarations
+    # in units which previously depended on iPhoneOS transitive includes.
+    prefix += '''#include "core/kext-config.h"
+#if !CONFIG_PROTECT
+#error Content protection must remain enabled
+#endif
+#include <libkern/sysctl.h>
+#define sysctlbyname kernel_sysctlbyname /* Genuine XNU kext export alias. */
+#include "core/hfs_cprotect.h"
+'''
     for unit in units:
         (dest/unit).write_text(prefix+f'#include "core/{unit}"\n', newline='\n')
     # In the monolithic build this is not a separately loaded/unloadable kext.
@@ -109,6 +146,18 @@ def install(storage, hfs, xnu):
 int hfs_is_ejectable(const char *cdev_name)''')
     replace(dest/'core/hfs_iokit.cpp', '#include "hfs_cnode.h"',
             '#include "hfs_cnode.h"\n#include "../hfs_encodings/hfs_encodings_internal.h"')
+    replace(dest/'core/hfs_search.c','vp->v_type == VDIR','vnode_vtype(vp) == VDIR')
+    replace(dest/'core/hfs_readwrite.c','iotypeflag = (uint32_t) ap->a_data;',
+            'iotypeflag = (uint32_t)(uintptr_t) ap->a_data;')
+    # Finder fields are two adjacent 16-byte records. Keep strict fortify by
+    # copying each actual object, not asserting that a16-byte field is32 bytes.
+    path=dest/'core/hfs_catalog.c'
+    text=path.read_text()
+    pattern=r'bcopy\(([^;\n]+), &([\w.>-]+)userInfo, 32\);'
+    text,count=re.subn(pattern,r'bcopy(\1, &\2userInfo, 16);\n\tbcopy((const unsigned char *)(\1)+16, &\2finderInfo, 16);',text)
+    if count!=4:
+        raise ValueError('HFS Finder metadata copy sites changed: '+str(count))
+    path.write_text(text,encoding='utf-8',newline='\n')
     replace(dest/'core/hfs_readwrite.c', '\tswitch (ap->a_command) {', '''\tswitch (ap->a_command) {
     case FSIOC_KERNEL_ROOTAUTH: {
         extern int ums512_qemu_hfs_root_auth(dev_t, int, int);
@@ -118,7 +167,8 @@ int hfs_is_ejectable(const char *cdev_name)''')
 ''')
     for unit in ('hfs_encodings.c', 'hfs_encodinghint.c'):
         units.append(unit)
-        (dest/unit).write_text(prefix+'#define hfs_allocated ums512_hfs_encodings_allocated\n'+
+        (dest/unit).write_text(prefix+'#include "hfs_encodings/hfs_encodings_internal.h"\n'+
+                              '#define hfs_allocated ums512_hfs_encodings_allocated\n'+
                               f'#include "hfs_encodings/{unit}"\n', newline='\n')
     with (xnu/'bsd/conf/files').open('a', newline='\n') as stream:
         for unit in units:
@@ -136,8 +186,52 @@ def flags(xnu, sdk, exported):
     paths += [xnu/'bsd/ums512_hfs', xnu/'bsd/ums512_hfs/core']
     units = json.loads((xnu/'iokit/ums512_storage/source-units.json').read_text())
     args = ' '.join('-I'+shlex.quote(str(p)) for p in paths)
-    return [Path(unit).stem+'.o_CFLAGS_ADD='+args
-            for unit in (*units['hfs'], *(n+'.cpp' for n in (*STORAGE, 'QemuRootStorage')))]
+    result=[]
+    for unit in (*units['hfs'], *(n+'.cpp' for n in (*STORAGE, 'QemuRootStorage'))):
+        obj=Path(unit).stem+('.cpo' if unit.endswith('.cpp') else '.o')
+        result.append(obj+'_CFLAGS_ADD='+args+' -Wall -Wextra -Wno-missing-field-initializers')
+        # Restore the original module warning profile (Wall/W), retaining
+        # Werror, typed allocators, fortify, stack checks and all native ABI flags.
+        result.append(obj+'_CFLAGS_RM=-Weverything')
+    return result
+
+
+def validate_image(data):
+    """Embedding guard from pinned hfs_format.h; not an HFS fsck substitute."""
+    if len(data)<4096 or len(data)>32*1024*1024 or len(data)%512:
+        raise ValueError('root image size outside bounded raw-sector profile')
+    if data[1024:1028]!=b'H+\x00\x04':
+        raise ValueError('root image is not unpartitioned HFS+ version4')
+    attrs=struct.unpack_from('>I',data,1028)[0]
+    block_size,blocks,free=struct.unpack_from('>III',data,1064)
+    if block_size<512 or block_size>65536 or block_size&(block_size-1) or blocks*block_size!=len(data) or free>blocks:
+        raise ValueError('invalid HFS allocation geometry')
+    if not attrs&(1<<8) or attrs&((1<<11)|(1<<14)):
+        raise ValueError('test root is not cleanly unmounted/consistent')
+    if attrs&(1<<30):
+        raise ValueError('encrypted test root requires an actual file-key provider')
+    alt=len(data)-1024
+    if data[alt:alt+4]!=data[1024:1028] or data[alt+40:alt+48]!=data[1064:1072]:
+        raise ValueError('alternate HFS volume geometry mismatch')
+    occupied=set(range((1536+block_size-1)//block_size)) | set(range(alt//block_size,blocks))
+    for offset in (112,192,272):
+        length,_,allocated=struct.unpack_from('>QII',data,1024+offset)
+        if not length or not allocated or length>allocated*block_size:
+            raise ValueError('missing/out-of-bounds required HFS metadata fork')
+        total=0
+        for i in range(8):
+            start,count=struct.unpack_from('>II',data,1024+offset+16+8*i)
+            if count:
+                if not start or start>=blocks or count>blocks-start:
+                    raise ValueError('HFS metadata extent outside image')
+                span=set(range(start,start+count))
+                if occupied&span:
+                    raise ValueError('overlapping HFS metadata extents')
+                occupied.update(span)
+                total+=count
+        if total!=allocated:
+            raise ValueError('test metadata fork requires unsupported overflow extents')
+    return {'block_bytes':block_size,'allocation_blocks':blocks,'attributes':attrs}
 
 
 def image(xnu):
@@ -166,9 +260,7 @@ def image(xnu):
         if result.returncode:
             raise RuntimeError('owned HFS image creation failed: '+(result.stdout+result.stderr)[-4000:])
     data = raw.read_bytes()
-    block_size,blocks=struct.unpack_from('>II',data,1064)
-    if len(data)>32*1024*1024 or len(data)!=block_size*blocks or data[1024:1026]!=b'H+':
-        raise ValueError('hdiutil did not produce a bounded raw, unpartitioned HFS+ image')
+    geometry=validate_image(data)
     disk=target/'root.hfs'
     with disk.open('xb') as stream:
         stream.write(data)
@@ -177,6 +269,7 @@ def image(xnu):
         '#define RMX_ROOT_BYTES '+str(len(data))+'ULL\n'+
         'static const unsigned char root_sha256[32] = {'+','.join(str(b) for b in sha)+'};\n', newline='\n')
     (target/'root_image.s').write_text('.section __DATA_CONST,__const\n.p2align 14\n'+
-        '.globl _ums512_root_image\n_ums512_root_image:\n.incbin "'+str(disk)+'"\n', newline='\n')
+        '.globl _ums512_root_image, _ums512_root_image_end\n_ums512_root_image:\n.incbin "'+str(disk)+'"\n'+
+        '_ums512_root_image_end:\n', newline='\n')
     return {'bytes':len(data), 'sha256':sha.hex(), 'format':'HFS+', 'content':'owned /dev, /sbin and root-proof.txt; no executable',
-            'embedded_in_kernel':True, 'readonly':True, 'apple_trust':False}
+            'geometry':geometry, 'embedded_in_kernel':True, 'readonly':True, 'apple_trust':False}
