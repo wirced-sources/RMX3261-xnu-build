@@ -13,7 +13,7 @@ import struct
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
-STORAGE = ('IOStorage', 'IOMedia', 'IOMediaBSDClient', 'IOBlockStorageDevice')
+STORAGE = ('IOStorage', 'IOMedia', 'IOMediaBSDClient', 'IOBlockStorageDevice', 'IOBlockStorageDriver')
 
 
 def replace(path, old, new, count=1):
@@ -57,25 +57,30 @@ def install(storage, hfs, xnu):
         shutil.copyfile(path, headers/path.name)
     for name in STORAGE:
         shutil.copyfile(storage/(name+'.cpp'), vendor/(name+'.cpp'))
-    # The selected transport is IOStorage, not IOBlockStorageDriver. These four
-    # optional hardware-driver ioctls already fail ENOTTY for such a provider.
-    # Preserve the real BSD bridge, read/write/strategy/bounds/open/ioctl paths.
+    # Preserve the complete original BSD bridge, including hardware-driver
+    # ioctls. A direct RAM provider naturally fails their dynamic driver cast.
     path = vendor/'IOMediaBSDClient.cpp'
-    text = path.read_text()
-    for name in ('DKIOCEJECT', 'DKIOCFORMAT', 'DKIOCGETFORMATCAPACITIES', 'DKIOCREQUESTIDLE'):
-        pattern = r'(        case '+name+r':[^\n]*\n        \{\n)(.*?)(\n        \} break;)'
-        text, count = re.subn(pattern, r'\1#if !defined(UMS512_IMMUTABLE_MEDIA)\n\2\n#else\n            error = ENOTTY;\n#endif\3', text, flags=re.S)
-        if count != 1:
-            raise ValueError('original storage ioctl boundary changed: '+name)
-    text = text.replace('#include <IOKit/storage/IOBlockStorageDriver.h>',
-                        '/* This transport has no IOBlockStorageDriver provider. */')
-    path.write_text(text, encoding='utf-8', newline='\n')
     replace(path,'register UInt64','UInt64',count=2)
     replace(path,'// Reprioritize a read or write request.',
             'if (request.tier>3) { error=EINVAL; break; }\n\n            // Reprioritize a read or write request.')
     for value in ('request.tier','bufattr_throttled(attributes.bufattr)'):
         replace(path,'DK_TIER_TO_PRIORITY('+value+')',
                 'static_cast<IOStoragePriority>(DK_TIER_TO_PRIORITY('+value+') & UINT8_MAX)')
+    # The actual driver class is required by stock IOService::setRootMedia.
+    # Retain its complete kernel-provider implementation/performance accounting.
+    # The separate userspace DriverKit provider is unavailable in this profile;
+    # do not invent its generated ABI or supply a fake IOUserBlockStorageDevice.
+    driver=vendor/'IOBlockStorageDriver.cpp'
+    replace(driver,'#include "IOUserBlockStorageDevice_kext.h"',
+            '/* Kernel IOBlockStorageDevice providers only; no DriverKit runtime. */')
+    replace(driver,'''    _userBlockStorageDevice = OSDynamicCast(IOUserBlockStorageDevice, provider);
+
+    if (_userBlockStorageDevice) {
+        _perfControlClient = _userBlockStorageDevice->getPerfControlClient();
+        assert(_perfControlClient != NULL);
+    }
+    else {''','''    _userBlockStorageDevice = nullptr;
+    {''')
     prefix = '''/* Original external-kernel-extension header context. */
 #undef BSD_KERNEL_PRIVATE
 #undef MACH_KERNEL_PRIVATE
@@ -97,8 +102,8 @@ def install(storage, hfs, xnu):
         # IOUserClient's native statistics header needs the full core OSKext
         # declarations. Compile that one built-in provider in native context,
         # preserving IOKITSTATS and its real privilege checks.
-        context='#include <TargetConditionals.h>\n' if name=='IOBlockStorageDevice' else prefix
-        (target/(name+'.cpp')).write_text(context+'#define UMS512_IMMUTABLE_MEDIA 1\n'+
+        context='#include <TargetConditionals.h>\n' if name in ('IOBlockStorageDevice','IOBlockStorageDriver') else prefix
+        (target/(name+'.cpp')).write_text(context+
                                        '#include "vendor/'+name+'.cpp"\n', newline='\n')
     for name in ('LICENSE', 'APPLE_LICENSE'):
         if (storage/name).is_file():
@@ -288,7 +293,7 @@ def flags(xnu, sdk, exported):
         obj=Path(unit).stem+('.cpo' if unit.endswith('.cpp') else '.o')
         # Full native context also requires native, unstripped Mach headers;
         # exported kext mach/vm_types.h intentionally lacks OSKext VM accounts.
-        includes=('-I'+shlex.quote(str(paths[0]))) if unit=='IOBlockStorageDevice.cpp' else args
+        includes=('-I'+shlex.quote(str(paths[0]))) if unit in ('IOBlockStorageDevice.cpp','IOBlockStorageDriver.cpp') else args
         result.append(obj+'_CFLAGS_ADD='+includes+' -Wall -Wextra -Wno-missing-field-initializers'+
                       ' -Wno-error=unused-parameter -Wno-error=deprecated-declarations'+
                       ' -Wno-error=nullability-completeness -Wno-error=nullability-completeness-on-arrays')

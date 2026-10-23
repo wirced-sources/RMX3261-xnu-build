@@ -40,9 +40,11 @@ jobs:
           if [ -f out/native/report/kernel-audit.json ]; then
             QEMU_BIN="$PWD/out/native/qemu-host/build/qemu-system-aarch64"
             "$QEMU_BIN" --version
+            XNU_BOOT_STATUS=0
             for XNU_BOOT_TRIAL in 1 2; do
-              python3 tools/xnu_kernel_qemu.py out/native/report/kernel.development.ums512.macho --record out/native/report/kernel-audit.json --out "out/native/kernel-qemu-$XNU_BOOT_TRIAL" --qemu "$QEMU_BIN" --clang "$(xcrun --find clang)"
+              python3 tools/xnu_kernel_qemu.py out/native/report/kernel.development.ums512.macho --record out/native/report/kernel-audit.json --out "out/native/kernel-qemu-$XNU_BOOT_TRIAL" --qemu "$QEMU_BIN" --clang "$(xcrun --find clang)" 2>&1 || XNU_BOOT_STATUS=1
             done
+            exit "$XNU_BOOT_STATUS"
           else
             echo 'QEMU NOT RUN: native kernel has not passed its strict audit'
           fi

@@ -611,7 +611,7 @@ def execute(kernel, record, out, qemu, clang):
                     result.setdefault('root_auth_returns',[]).append(int(regs['x0'],16)&0xffffffff)
                 if name in ('_bsd_init','_IOFindBSDRoot'):
                     inspect_crypto(rsp,sym,result)
-                if '_ums512_storage_proof' in sym and name in ('_panic','other stop','_vfs_mountroot',
+                if '_ums512_storage_proof' in sym and name in ('_Assert','_panic','other stop','_vfs_mountroot',
                         'return:_vfs_mountroot','_ums512_qemu_hfs_root_auth','_devfs_kernel_mount','_load_init_program'):
                     raw=bytes.fromhex(rsp.command(f'm{sym["_ums512_storage_proof"]:x},80'))
                     result['storage_runtime']=dict(zip(('started','image_authenticated','reads','bytes_read',
@@ -628,7 +628,7 @@ def execute(kernel, record, out, qemu, clang):
                 if name=='return:_vfs_mountroot':
                     result['vfs_mountroot_return']=int(regs['x0'],16)&0xffffffff
                     result['rootfs_mounted']=result['vfs_mountroot_return']==0
-                if '_ums512_rootfs_proof' in sym and name in ('_panic','other stop',
+                if '_ums512_rootfs_proof' in sym and name in ('_Assert','_panic','other stop',
                         'return:_ums512_qemu_rootfs_selftest','_devfs_kernel_mount','_load_init_program'):
                     raw=bytes.fromhex(rsp.command(f'm{sym["_ums512_rootfs_proof"]:x},40'))
                     result['rootfs_vnode_runtime']=dict(zip(('magic','complete','reads','bytes',
@@ -654,7 +654,7 @@ def execute(kernel, record, out, qemu, clang):
                         p.get('valid') and p.get('read_only') and p.get('privileged_execute_never') for p in protected.values())
                     if not result['security_tables_read_only_nx']:
                         raise RuntimeError('actual security interface VA mappings are not read-only/NX after stock lockdown')
-                if rtc and name in ('_panic','other stop','_bsd_init','_bsd_autoconf','_IOFindBSDRoot','_vfs_mountroot'):
+                if rtc and name in ('_Assert','_panic','other stop','_bsd_init','_bsd_autoconf','_IOFindBSDRoot','_vfs_mountroot'):
                     raw=bytes.fromhex(rsp.command(f'm{sym["_ums512_platform_proof"]:x},40'))
                     result['platform_runtime']=dict(zip(('started','mmio_nubs','resource_ranges','rtc_identity',
                         'rtc_reads','rtc_writes','rtc_tick_verified','unsupported_resource_requests'),struct.unpack('<8Q',raw)))
@@ -810,6 +810,11 @@ def execute(kernel, record, out, qemu, clang):
                             raise RuntimeError('QEMU init-return breakpoint unavailable')
             else:
                 result['boundary_limit_reached']=True
+            if result.get('assertion_reached'):
+                raise RuntimeError('genuine XNU assertion: '+str(result.get('assertion_expression'))+
+                                   ' at '+str(result.get('assertion_file'))+':'+str(result.get('assertion_line')))
+            if result.get('kernel_fault'):
+                raise RuntimeError('genuine XNU data/instruction abort; inspect exact saved-state evidence')
             if runtime_requested and not result.get('kernel_runtime_tests_passed'):
                 raise RuntimeError('requested genuine kernel VM/IPC tests did not complete; inspect recorded panic/phase')
             if '_ums512_security_proof' in sym and not result.get('security_runtime_tests_passed'):
@@ -823,6 +828,21 @@ def execute(kernel, record, out, qemu, clang):
             if '_ums512_cpu_topology_proof' in sym and result.get('cpu_topology_runtime')!=dict(
                 published=1,num_cpus=1,max_cpu_id=0,boot_cpu_id=0,boot_phys_id=0,current_affinity=0,machine_max_cpus=1,reserved0=0):
                 raise RuntimeError('QEMU actual UP CPU enumeration publication did not complete')
+            if '_ums512_storage_proof' in sym:
+                storage=result.get('storage_runtime',{})
+                if any(storage.get(k)!=v for k,v in dict(test_complete=1,test_reads=2,test_writes=1,
+                        test_bounds=3,test_access=2,test_crypto_negative=1,test_auth_negative=3).items()):
+                    raise RuntimeError('genuine readonly block transport tests did not complete')
+                if not result.get('root_image_ro_nx_samples_verified'):
+                    raise RuntimeError('immutable root image live RO/NX samples were not verified')
+                if not result.get('rootfs_mounted') or not result.get('rootfs_vnode_runtime',{}).get('complete') or not storage.get('root_auth_ok'):
+                    raise RuntimeError('genuine authenticated HFS root mount/vnode operations did not complete')
+                result['rootfs_runtime_tests_passed']=True
+                if result.get('panic_format_from_audited_kernel'):
+                    failure=result.get('first_process_exec_failure',{})
+                    result['expected_missing_init_boundary']=failure.get('path')=='/sbin/launchd' and failure.get('errno')==2
+                    if not result['expected_missing_init_boundary']:
+                        raise RuntimeError('unexpected XNU panic after root mount; inspect recorded format/arguments')
     except Exception as error:
         result['error'] = str(error)
         raise
