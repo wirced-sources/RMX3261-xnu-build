@@ -286,7 +286,10 @@ def flags(xnu, sdk, exported):
     result=[]
     for unit in (*units['hfs'], *(n+'.cpp' for n in (*STORAGE, 'QemuRootStorage'))):
         obj=Path(unit).stem+('.cpo' if unit.endswith('.cpp') else '.o')
-        result.append(obj+'_CFLAGS_ADD='+args+' -Wall -Wextra -Wno-missing-field-initializers'+
+        # Full native context also requires native, unstripped Mach headers;
+        # exported kext mach/vm_types.h intentionally lacks OSKext VM accounts.
+        includes=('-I'+shlex.quote(str(paths[0]))) if unit=='IOBlockStorageDevice.cpp' else args
+        result.append(obj+'_CFLAGS_ADD='+includes+' -Wall -Wextra -Wno-missing-field-initializers'+
                       ' -Wno-error=unused-parameter -Wno-error=deprecated-declarations'+
                       ' -Wno-error=nullability-completeness -Wno-error=nullability-completeness-on-arrays')
         # Restore the original module warning profile (Wall/W), retaining

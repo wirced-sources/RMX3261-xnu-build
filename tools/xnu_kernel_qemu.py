@@ -66,6 +66,16 @@ def interrupt_mask_panic_arguments(block):
     return reason,elapsed,start,now,timeout,source,line
 
 
+def init_process_panic_arguments(block):
+    """Darwin variadic pointer/u32/pointer/u32; padding is never exported."""
+    if len(block)!=32:
+        raise ValueError('first-process panic argument size mismatch')
+    path=struct.unpack_from('<Q',block)[0]
+    error=struct.unpack_from('<I',block,8)[0]
+    source,line=struct.unpack_from('<QI',block,16)
+    return path,error,source,line
+
+
 def image_cstring(data, segments, pointer, limit=512):
     """Only public audited-image strings, never arbitrary target memory."""
     owner = next((s for s in segments if s['vmaddr'] <= pointer < s['vmaddr']+s['filesize']),None)
@@ -720,12 +730,20 @@ def execute(kernel, record, out, qemu, clang):
                                      '%' not in panic_format[:-len(' @%s:%d')])
                         security_message=panic_format=='QEMU lab security runtime test: %s @%s:%d'
                         hygiene=panic_format=='%s for %llu nanoseconds (start = %llu, now = %llu, timeout = %llu ns%s) @%s:%d'
-                        length = 336 if fault else 64 if hygiene else 24 if security_message else 16 if plain else 0
+                        init_failure=panic_format=='Process 1 exec of %s failed, errno %d @%s:%d'
+                        length = 336 if fault else 64 if hygiene else 32 if init_failure else 24 if security_message else 16 if plain else 0
                         block = bytes.fromhex(rsp.command(f'm{int(regs["sp"],16):x},{length:x}')) if length else b''
                         values = (struct.unpack('<5Q',block[:40]) if fault else
                                   struct.unpack_from('<QQI',block) if security_message else
                                   plain_panic_arguments(block) if plain else
                                   interrupt_mask_panic_arguments(block) if hygiene else ())
+                        if init_failure:
+                            path,error,source,line=init_process_panic_arguments(block)
+                            # Both strings must belong to the audited Mach-O;
+                            # no arbitrary vnode/path buffers are read/exported.
+                            result['first_process_exec_failure']=dict(
+                                path=image_cstring(data,report['segments'],path),errno=error,
+                                source=image_cstring(data,report['segments'],source),line=line)
                         result['panic_stack_argument_words'] = [hex(v) for v in values]
                         result['panic_stack_source_strings'] = [image_cstring(data,report['segments'],v) for v in values]
                         if hygiene:
