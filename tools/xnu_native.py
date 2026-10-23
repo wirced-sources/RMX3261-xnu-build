@@ -434,12 +434,12 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
     native.extend(pthread_flags(src,sdk,fake))
     from xnu_storage import flags as storage_flags, image as storage_image
     native.extend(storage_flags(src,sdk,fake))
-    image_proof=storage_image(src)
-    (report/'root-image.json').write_text(json.dumps(image_proof,indent=2)+'\n')
-    print('ROOT IMAGE: '+json.dumps(image_proof),flush=True)
     print('SDK HFS key header available: '+str(any((Path(sdk)/p/'AppleKeyStore/AppleKeyStoreFSServices.h').is_file()
           for p in ('System/Library/Frameworks/Kernel.framework/Headers',
                     'System/Library/Frameworks/Kernel.framework/PrivateHeaders','usr/local/include'))),flush=True)
+    image_proof=storage_image(src)
+    (report/'root-image.json').write_text(json.dumps(image_proof,indent=2)+'\n')
+    print('ROOT IMAGE: '+json.dumps(image_proof),flush=True)
     run(["make", "installhdrs", "-j2", *native], "xnu-headers", report, env, src)
     xbuild("Libsystem", "installhdrs", ["FAKEROOT_DIR=" + str(fake)])
     run(["xcodebuild", "installhdrs", "-sdk", "macosx", "-jobs", "2", "ARCHS=arm64", "VALID_ARCHS=arm64",

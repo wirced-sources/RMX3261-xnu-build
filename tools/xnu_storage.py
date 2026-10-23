@@ -9,6 +9,7 @@ import json
 import re
 import shlex
 import shutil
+import struct
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -140,27 +141,42 @@ def flags(xnu, sdk, exported):
 
 
 def image(xnu):
-    """Format only a newly created regular file inside this isolated build tree."""
+    """Create only owned test image files; never pass a device node to a formatter.
+
+    macOS newfs_hfs accepts device basenames, not regular-file destinations.
+    hdiutil owns its temporary image attachment and detaches it automatically;
+    no host mount, device path, sudo, physical disk or user files are supplied.
+    """
     xnu = Path(xnu).resolve()
     xnu.relative_to((ROOT/'out').resolve())
     target = xnu/'iokit/ums512_storage'
-    disk = target/'root.hfs'
+    staging=target/'root-content'
+    staging.mkdir()
+    (staging/'dev').mkdir()
+    (staging/'sbin').mkdir()
+    (staging/'root-proof.txt').write_text('Owned QEMU laboratory data; no Apple userland.\n')
+    dmg, raw = target/'root.dmg', target/'root.cdr'
+    if dmg.exists() or raw.exists():
+        raise ValueError('refusing to overwrite a root image')
+    for command in (
+        ['/usr/bin/hdiutil','create','-quiet','-size','16m','-fs','HFS+',
+         '-volname','RMXQemuRoot','-layout','NONE','-srcfolder',str(staging),'-format','UDRW',str(dmg)],
+        ['/usr/bin/hdiutil','convert','-quiet',str(dmg),'-format','UDTO','-o',str(raw)]):
+        result=subprocess.run(command, timeout=120, capture_output=True, text=True)
+        if result.returncode:
+            raise RuntimeError('owned HFS image creation failed: '+(result.stdout+result.stderr)[-4000:])
+    data = raw.read_bytes()
+    block_size,blocks=struct.unpack_from('>II',data,1064)
+    if len(data)>32*1024*1024 or len(data)!=block_size*blocks or data[1024:1026]!=b'H+':
+        raise ValueError('hdiutil did not produce a bounded raw, unpartitioned HFS+ image')
+    disk=target/'root.hfs'
     with disk.open('xb') as stream:
-        stream.truncate(16*1024*1024)
-    if disk.is_symlink() or not disk.is_file() or disk.resolve().parent != target:
-        raise ValueError('unsafe test filesystem destination')
-    result=subprocess.run(['/sbin/newfs_hfs', '-v', 'RMXQemuRoot', str(disk)],
-                          timeout=60, capture_output=True, text=True)
-    if result.returncode:
-        raise RuntimeError('newfs_hfs failed: '+(result.stdout+result.stderr)[-4000:])
-    data = disk.read_bytes()
-    if len(data) != 16*1024*1024 or data[1024:1026] != b'H+':
-        raise ValueError('newfs_hfs did not produce the requested plain HFS+ volume')
+        stream.write(data)
     sha = hashlib.sha256(data).digest()
     (target/'root_image.h').write_text('/* Per-build, controlled data-only root trust anchor. */\n'+
         '#define RMX_ROOT_BYTES '+str(len(data))+'ULL\n'+
         'static const unsigned char root_sha256[32] = {'+','.join(str(b) for b in sha)+'};\n', newline='\n')
     (target/'root_image.s').write_text('.section __DATA_CONST,__const\n.p2align 14\n'+
         '.globl _ums512_root_image\n_ums512_root_image:\n.incbin "'+str(disk)+'"\n', newline='\n')
-    return {'bytes':len(data), 'sha256':sha.hex(), 'format':'HFS+', 'content':'empty owned data-only volume',
+    return {'bytes':len(data), 'sha256':sha.hex(), 'format':'HFS+', 'content':'owned /dev, /sbin and root-proof.txt; no executable',
             'embedded_in_kernel':True, 'readonly':True, 'apple_trust':False}
