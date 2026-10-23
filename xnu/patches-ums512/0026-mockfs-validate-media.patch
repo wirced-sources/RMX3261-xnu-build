@@ -1,0 +1,41 @@
+--- a/bsd/miscfs/mockfs/mockfs_vfsops.c
++++ b/bsd/miscfs/mockfs/mockfs_vfsops.c
+@@ -37,6 +37,9 @@
+ #include <sys/malloc.h>
+ #include <sys/mount_internal.h>
+ #include <sys/vnode_internal.h>
++#include <sys/buf.h>
++#include <sys/fcntl.h>
++#include <mach-o/loader.h>
+ 
+ static LCK_GRP_DECLARE(mockfs_mtx_grp, "mockfs-mutex");
+ 
+@@ -71,9 +74,26 @@
+ 	dk_memdev_info_t memdev_info;
+ 
+ 	/*
+-	 * TODO: Validate that the device at least LOOKS like a mach-o (has a sane header); this would prevent us
+-	 *   from causing EBADMACHO panics further along the boot path.
++	 * A different filesystem must be allowed to probe non-Mach-O media.
++	 * This is only a format probe; exec still performs its normal validation.
+ 	 */
++	rvalue = VNOP_OPEN(rvp, FREAD, ctx);
++	if (rvalue) {
++		return rvalue;
++	}
++	buf_t probe = NULL;
++	rvalue = buf_meta_bread(rvp, 0, 512, vfs_context_ucred(ctx), &probe);
++	uint32_t magic = 0;
++	if (!rvalue && probe && buf_count(probe) >= sizeof(magic)) {
++		memcpy(&magic, (const void *)buf_dataptr(probe), sizeof(magic));
++	}
++	if (probe) {
++		buf_brelse(probe);
++	}
++	(void)VNOP_CLOSE(rvp, FREAD, ctx);
++	if (rvalue || (magic != MH_MAGIC_64 && magic != MH_MAGIC)) {
++		return rvalue ? rvalue : EINVAL;
++	}
+ 
+ 	/*
+ 	 * There are no M_MOCKFS* definitions at the moment, just use M_TEMP.

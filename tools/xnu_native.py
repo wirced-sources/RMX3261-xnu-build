@@ -50,6 +50,7 @@ PATCHES = (
     "xnu/patches-ums512/0023-monolithic-pthread-registration.patch",
     "xnu/patches-ums512/0024-qemu-bsd-socket-validation.patch",
     "xnu/patches-ums512/0025-qemu-root-storage.patch",
+    "xnu/patches-ums512/0026-mockfs-validate-media.patch",
     "xnu/patches/0005-non-pac-build-fixes.patch",
 )
 CAPSULE = (

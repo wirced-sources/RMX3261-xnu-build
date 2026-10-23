@@ -149,8 +149,10 @@ def image(xnu):
         stream.truncate(16*1024*1024)
     if disk.is_symlink() or not disk.is_file() or disk.resolve().parent != target:
         raise ValueError('unsafe test filesystem destination')
-    subprocess.run(['/sbin/newfs_hfs', '-v', 'RMXQemuRoot', '-s', '32768', str(disk)],
-                   check=True, timeout=60, capture_output=True)
+    result=subprocess.run(['/sbin/newfs_hfs', '-v', 'RMXQemuRoot', str(disk)],
+                          timeout=60, capture_output=True, text=True)
+    if result.returncode:
+        raise RuntimeError('newfs_hfs failed: '+(result.stdout+result.stderr)[-4000:])
     data = disk.read_bytes()
     if len(data) != 16*1024*1024 or data[1024:1026] != b'H+':
         raise ValueError('newfs_hfs did not produce the requested plain HFS+ volume')
