@@ -1,0 +1,470 @@
+{
+  "schema": 1,
+  "selected_payload_address": null,
+  "approved_for_hardware": false,
+  "regions": [
+    {
+      "source": "runtime-analysis-FDT",
+      "name": "/reserved-memory/writeback-mem@ff562000",
+      "base": "0xff562000",
+      "size": "0xa1e000",
+      "end_exclusive": "0xfff80000"
+    },
+    {
+      "source": "runtime-analysis-FDT",
+      "name": "/reserved-memory/framebuffer-mem@fd708000",
+      "base": "0xfd708000",
+      "size": "0x1e5a000",
+      "end_exclusive": "0xff562000"
+    },
+    {
+      "source": "runtime-analysis-FDT",
+      "name": "/reserved-memory/faceid-mem@efaae000",
+      "base": "0xefaae000",
+      "size": "0x500000",
+      "end_exclusive": "0xeffae000"
+    },
+    {
+      "source": "runtime-analysis-FDT",
+      "name": "/reserved-memory/logobuffer@9e000000",
+      "base": "0x9e000000",
+      "size": "0x9e4000",
+      "end_exclusive": "0x9e9e4000"
+    },
+    {
+      "source": "runtime-analysis-FDT",
+      "name": "/reserved-memory/ddrbist-mem@80000000",
+      "base": "0x80000000",
+      "size": "0x1000",
+      "end_exclusive": "0x80001000"
+    },
+    {
+      "source": "runtime-analysis-FDT",
+      "name": "/reserved-memory/rebootescrow@0x81ff0000",
+      "base": "0x81ff0000",
+      "size": "0x10000",
+      "end_exclusive": "0x82000000"
+    },
+    {
+      "source": "runtime-analysis-FDT",
+      "name": "/reserved-memory/audio-mem@87500000",
+      "base": "0x87500000",
+      "size": "0x300000",
+      "end_exclusive": "0x87800000"
+    },
+    {
+      "source": "runtime-analysis-FDT",
+      "name": "/reserved-memory/sipc-mem@87800000",
+      "base": "0x87800000",
+      "size": "0x800000",
+      "end_exclusive": "0x88000000"
+    },
+    {
+      "source": "runtime-analysis-FDT",
+      "name": "/reserved-memory/sp-ddr-mem@88000000",
+      "base": "0x88000000",
+      "size": "0x300000",
+      "end_exclusive": "0x88300000"
+    },
+    {
+      "source": "runtime-analysis-FDT",
+      "name": "/reserved-memory/audiodsp-mem@89000000",
+      "base": "0x89000000",
+      "size": "0x600000",
+      "end_exclusive": "0x89600000"
+    },
+    {
+      "source": "runtime-analysis-FDT",
+      "name": "/reserved-memory/cp-mem@89600000",
+      "base": "0x89600000",
+      "size": "0x4900000",
+      "end_exclusive": "0x8df00000"
+    },
+    {
+      "source": "runtime-analysis-FDT",
+      "name": "/reserved-memory/sml-mem@94000000",
+      "base": "0x94000000",
+      "size": "0x40000",
+      "end_exclusive": "0x94040000"
+    },
+    {
+      "source": "runtime-analysis-FDT",
+      "name": "/reserved-memory/tos-mem@94040000",
+      "base": "0x94060000",
+      "size": "0x4fa0000",
+      "end_exclusive": "0x99000000"
+    },
+    {
+      "source": "runtime-analysis-FDT",
+      "name": "/reserved-memory/ramoops@fff80000",
+      "base": "0xfff80000",
+      "size": "0x40000",
+      "end_exclusive": "0xfffc0000"
+    },
+    {
+      "source": "runtime-analysis-FDT",
+      "name": "/reserved-memory/debug-mem@100000000",
+      "base": "0x100000000",
+      "size": "0x1000",
+      "end_exclusive": "0x100001000"
+    },
+    {
+      "source": "runtime-analysis-FDT",
+      "name": "/reserved-memory/debug-mem@844c0000",
+      "base": "0x844c0000",
+      "size": "0x4000",
+      "end_exclusive": "0x844c4000"
+    },
+    {
+      "source": "runtime-analysis-FDT",
+      "name": "memreserve",
+      "base": "0x94040000",
+      "size": "0x20000"
+    },
+    {
+      "source": "boot-base-FDT-before-overlay-and-loader-fixups",
+      "name": "/reserved-memory/ddrbist-mem@80000000",
+      "base": "0x80000000",
+      "size": "0x1000",
+      "end_exclusive": "0x80001000"
+    },
+    {
+      "source": "boot-base-FDT-before-overlay-and-loader-fixups",
+      "name": "/reserved-memory/rebootescrow@0x81ff0000",
+      "base": "0x81ff0000",
+      "size": "0x10000",
+      "end_exclusive": "0x82000000"
+    },
+    {
+      "source": "boot-base-FDT-before-overlay-and-loader-fixups",
+      "name": "/reserved-memory/audio-mem@87500000",
+      "base": "0x87500000",
+      "size": "0x300000",
+      "end_exclusive": "0x87800000"
+    },
+    {
+      "source": "boot-base-FDT-before-overlay-and-loader-fixups",
+      "name": "/reserved-memory/sipc-mem@87800000",
+      "base": "0x87800000",
+      "size": "0x800000",
+      "end_exclusive": "0x88000000"
+    },
+    {
+      "source": "boot-base-FDT-before-overlay-and-loader-fixups",
+      "name": "/reserved-memory/sp-ddr-mem@88000000",
+      "base": "0x88000000",
+      "size": "0x300000",
+      "end_exclusive": "0x88300000"
+    },
+    {
+      "source": "boot-base-FDT-before-overlay-and-loader-fixups",
+      "name": "/reserved-memory/audiodsp-mem@89000000",
+      "base": "0x89000000",
+      "size": "0x600000",
+      "end_exclusive": "0x89600000"
+    },
+    {
+      "source": "boot-base-FDT-before-overlay-and-loader-fixups",
+      "name": "/reserved-memory/cp-mem@89600000",
+      "base": "0x89600000",
+      "size": "0x4900000",
+      "end_exclusive": "0x8df00000"
+    },
+    {
+      "source": "boot-base-FDT-before-overlay-and-loader-fixups",
+      "name": "/reserved-memory/iq-mem@90000000",
+      "base": "0x90000000",
+      "size": "0x4000000",
+      "end_exclusive": "0x94000000"
+    },
+    {
+      "source": "boot-base-FDT-before-overlay-and-loader-fixups",
+      "name": "/reserved-memory/sml-mem@94000000",
+      "base": "0x94000000",
+      "size": "0x40000",
+      "end_exclusive": "0x94040000"
+    },
+    {
+      "source": "boot-base-FDT-before-overlay-and-loader-fixups",
+      "name": "/reserved-memory/tos-mem@94040000",
+      "base": "0x94040000",
+      "size": "0x3fc0000",
+      "end_exclusive": "0x98000000"
+    },
+    {
+      "source": "boot-base-FDT-before-overlay-and-loader-fixups",
+      "name": "/reserved-memory/ramoops@fff80000",
+      "base": "0xfff80000",
+      "size": "0x40000",
+      "end_exclusive": "0xfffc0000"
+    },
+    {
+      "source": "boot-base-FDT-before-overlay-and-loader-fixups",
+      "name": "/reserved-memory/debug-mem@100000000",
+      "base": "0x100000000",
+      "size": "0x1000",
+      "end_exclusive": "0x100001000"
+    },
+    {
+      "source": "boot-base-FDT-before-overlay-and-loader-fixups",
+      "name": "/reserved-memory/debug-mem@844c0000",
+      "base": "0x844c0000",
+      "size": "0x4000",
+      "end_exclusive": "0x844c4000"
+    },
+    {
+      "source": "saved-2024-loader-FDT",
+      "name": "/reserved-memory/fastbootbuffer@82000000",
+      "base": "0xb0000000",
+      "size": "0x28000000",
+      "end_exclusive": "0xd8000000"
+    },
+    {
+      "source": "saved-2024-loader-FDT",
+      "name": "/reserved-memory/sparsebuffer@82000000",
+      "base": "0xb0000000",
+      "size": "0x28000000",
+      "end_exclusive": "0xd8000000"
+    },
+    {
+      "source": "saved-2024-loader-FDT",
+      "name": "/reserved-memory/alterbuffer1@92000000",
+      "base": "0x92000000",
+      "size": "0x200000",
+      "end_exclusive": "0x92200000"
+    },
+    {
+      "source": "saved-2024-loader-FDT",
+      "name": "/reserved-memory/alterbuffer2@92200000",
+      "base": "0x92200000",
+      "size": "0x200000",
+      "end_exclusive": "0x92400000"
+    },
+    {
+      "source": "saved-2024-loader-FDT",
+      "name": "/reserved-memory/pre_log_buffer@92300000",
+      "base": "0x92300000",
+      "size": "0x2000",
+      "end_exclusive": "0x92302000"
+    },
+    {
+      "source": "saved-2024-loader-FDT",
+      "name": "/reserved-memory/logbuffer@92400000",
+      "base": "0x92400000",
+      "size": "0x50000",
+      "end_exclusive": "0x92450000"
+    },
+    {
+      "source": "saved-2024-loader-FDT",
+      "name": "/reserved-memory/secboot-arg-mem@92450000",
+      "base": "0x92450000",
+      "size": "0xf00000",
+      "end_exclusive": "0x93350000"
+    },
+    {
+      "source": "saved-2024-loader-FDT",
+      "name": "/reserved-memory/secboot-vbmeta-mem@93350000",
+      "base": "0x93350000",
+      "size": "0x800000",
+      "end_exclusive": "0x93b50000"
+    },
+    {
+      "source": "saved-2024-loader-FDT",
+      "name": "/reserved-memory/sml-mem@94000000",
+      "base": "0x94000000",
+      "size": "0x20000",
+      "end_exclusive": "0x94020000"
+    },
+    {
+      "source": "saved-2024-loader-FDT",
+      "name": "/reserved-memory/tos-mem@94020000",
+      "base": "0x94020000",
+      "size": "0x5fe0000",
+      "end_exclusive": "0x9a000000"
+    },
+    {
+      "source": "saved-2024-loader-FDT",
+      "name": "/reserved-memory/secboot-verify-mem@0x9a000000",
+      "base": "0x9a000000",
+      "size": "0x3000000",
+      "end_exclusive": "0x9d000000"
+    },
+    {
+      "source": "saved-2024-loader-FDT",
+      "name": "/reserved-memory/bmp-mem@9d000000",
+      "base": "0x9d000000",
+      "size": "0x9e4000",
+      "end_exclusive": "0x9d9e4000"
+    },
+    {
+      "source": "saved-2024-loader-FDT",
+      "name": "/reserved-memory/writeback@ff562000",
+      "base": "0xff562000",
+      "size": "0xa1e000",
+      "end_exclusive": "0xfff80000"
+    },
+    {
+      "source": "saved-2024-loader-FDT",
+      "name": "/reserved-memory/logobuffer@9e000000",
+      "base": "0x9e000000",
+      "size": "0x9e4000",
+      "end_exclusive": "0x9e9e4000"
+    },
+    {
+      "source": "conditional: if saved loader occupies its inferred link address",
+      "name": "loader-file-only (excludes BSS/heap/stack)",
+      "base": "0x9efffe00",
+      "size": "0xd8ee4"
+    }
+  ],
+  "rejection_examples": [
+    {
+      "hypothetical_base": "0x80000000",
+      "hypothetical_bytes": 32064,
+      "purpose": "RAM base overlaps DDRBIST",
+      "conflicts": [
+        {
+          "source": "runtime-analysis-FDT",
+          "name": "/reserved-memory/ddrbist-mem@80000000",
+          "base": "0x80000000",
+          "size": "0x1000",
+          "end_exclusive": "0x80001000"
+        },
+        {
+          "source": "boot-base-FDT-before-overlay-and-loader-fixups",
+          "name": "/reserved-memory/ddrbist-mem@80000000",
+          "base": "0x80000000",
+          "size": "0x1000",
+          "end_exclusive": "0x80001000"
+        }
+      ],
+      "approved_for_hardware": false
+    },
+    {
+      "hypothetical_base": "0x92300000",
+      "hypothetical_bytes": 32064,
+      "purpose": "pre-log and alternative loader buffers",
+      "conflicts": [
+        {
+          "source": "boot-base-FDT-before-overlay-and-loader-fixups",
+          "name": "/reserved-memory/iq-mem@90000000",
+          "base": "0x90000000",
+          "size": "0x4000000",
+          "end_exclusive": "0x94000000"
+        },
+        {
+          "source": "saved-2024-loader-FDT",
+          "name": "/reserved-memory/alterbuffer2@92200000",
+          "base": "0x92200000",
+          "size": "0x200000",
+          "end_exclusive": "0x92400000"
+        },
+        {
+          "source": "saved-2024-loader-FDT",
+          "name": "/reserved-memory/pre_log_buffer@92300000",
+          "base": "0x92300000",
+          "size": "0x2000",
+          "end_exclusive": "0x92302000"
+        }
+      ],
+      "approved_for_hardware": false
+    },
+    {
+      "hypothetical_base": "0x92400000",
+      "hypothetical_bytes": 32064,
+      "purpose": "loader console buffer",
+      "conflicts": [
+        {
+          "source": "boot-base-FDT-before-overlay-and-loader-fixups",
+          "name": "/reserved-memory/iq-mem@90000000",
+          "base": "0x90000000",
+          "size": "0x4000000",
+          "end_exclusive": "0x94000000"
+        },
+        {
+          "source": "saved-2024-loader-FDT",
+          "name": "/reserved-memory/logbuffer@92400000",
+          "base": "0x92400000",
+          "size": "0x50000",
+          "end_exclusive": "0x92450000"
+        }
+      ],
+      "approved_for_hardware": false
+    },
+    {
+      "hypothetical_base": "0x94060000",
+      "hypothetical_bytes": 32064,
+      "purpose": "secure memory",
+      "conflicts": [
+        {
+          "source": "runtime-analysis-FDT",
+          "name": "/reserved-memory/tos-mem@94040000",
+          "base": "0x94060000",
+          "size": "0x4fa0000",
+          "end_exclusive": "0x99000000"
+        },
+        {
+          "source": "boot-base-FDT-before-overlay-and-loader-fixups",
+          "name": "/reserved-memory/tos-mem@94040000",
+          "base": "0x94040000",
+          "size": "0x3fc0000",
+          "end_exclusive": "0x98000000"
+        },
+        {
+          "source": "saved-2024-loader-FDT",
+          "name": "/reserved-memory/tos-mem@94020000",
+          "base": "0x94020000",
+          "size": "0x5fe0000",
+          "end_exclusive": "0x9a000000"
+        }
+      ],
+      "approved_for_hardware": false
+    },
+    {
+      "hypothetical_base": "0x9f000000",
+      "hypothetical_bytes": 32064,
+      "purpose": "conditional loader text link address",
+      "conflicts": [
+        {
+          "source": "conditional: if saved loader occupies its inferred link address",
+          "name": "loader-file-only (excludes BSS/heap/stack)",
+          "base": "0x9efffe00",
+          "size": "0xd8ee4"
+        }
+      ],
+      "approved_for_hardware": false
+    },
+    {
+      "hypothetical_base": "0xb0000000",
+      "hypothetical_bytes": 32064,
+      "purpose": "loader fastboot/sparse buffers",
+      "conflicts": [
+        {
+          "source": "saved-2024-loader-FDT",
+          "name": "/reserved-memory/fastbootbuffer@82000000",
+          "base": "0xb0000000",
+          "size": "0x28000000",
+          "end_exclusive": "0xd8000000"
+        },
+        {
+          "source": "saved-2024-loader-FDT",
+          "name": "/reserved-memory/sparsebuffer@82000000",
+          "base": "0xb0000000",
+          "size": "0x28000000",
+          "end_exclusive": "0xd8000000"
+        }
+      ],
+      "approved_for_hardware": false
+    }
+  ],
+  "unknown_extents": [
+    "actual loader relocation",
+    "BSS bounds (header candidates not runtime proof)",
+    "stack and heap",
+    "active FDT including expansion and fixups",
+    "initrd and kernel destinations",
+    "USB/eMMC DMA descriptors and buffers",
+    "secure-world access restrictions"
+  ],
+  "context_rule": "different boot-stage maps are not simultaneous allocations; retain all as potential exclusions until live state is known"
+}

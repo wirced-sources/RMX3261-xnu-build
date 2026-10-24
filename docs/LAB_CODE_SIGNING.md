@@ -1,8 +1,12 @@
 # Isolated QEMU executable authorization
 
-Native57 confirmed enforced signed EL0/getpid twice; see history/native57.
-The next process-lifecycle implementation is locally built/checked, awaiting
-native58 runtime evidence. Native57 remains the last confirmed native baseline.
+Native61/run40122405101 confirmed signed init/child and the complete real
+fork/execve/pipe/exit37/wait4/CoW lifecycle in two QEMU boots. See
+history/native61/summary.json and PROCESS_LIFECYCLE.md. Global enforcement1/RO/NX,
+two independent CodeDirectory/CMS authorizations, two native attachment returns0
+and cs_validate_page15/0/0 for each image passed in both boots. Fresh EL1 counters
+are2/2/6/6/4; four vnode negatives and two actual unsigned/altered child execve
+EAUTH80 results are separate observations. Native57 remains historical evidence.
 
 The files are our own static ARM64 Mach-O init and child. Their first instructions
 issue Darwin getpid20 via SVC0x80. The lifecycle programs use native fd I/O,
@@ -99,8 +103,8 @@ This macro is in CONFIG_DEFINES, consumed by MakeInc.def, rather than a guessed
 generated-header name. The same actual generated Makefiles are checked in CI;
 only a new runtime readback1 with RO/NX can confirm enforcement in that kernel.
 
-This proves only the owned laboratory process when the native test passes.
-Native57/run40112465191 now passed TWO real boots of the exact full kernel
+This proves only the specifically authenticated owned laboratory processes.
+Historical native57/run40112465191 passed TWO real boots of the exact full kernel
 SHA2564fc8d0663cbdb9c05d7e19cb3872814459577c4543581e357d928adde462281e.
 Global enforcement1/RO/NX, stock attachment return0, native page validation
 15/0/0 and EL0/getpid/PID1/success-loop were observed. Fresh getpid-return EL1

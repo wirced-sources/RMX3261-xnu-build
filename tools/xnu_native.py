@@ -56,6 +56,14 @@ PATCHES = (
     "xnu/patches/0005-non-pac-build-fixes.patch",
 )
 CAPSULE = (
+    "tools/ums512_hardware_build.py", "tools/ums512_handoff.py", "tools/ums512_target.py",
+    "tools/extract_hardware.py", "tools/build.py", "tools/elf.py", "tools/logdecode.py",
+    "tools/xnu_build.py", "tools/xnu_sources.py", "tools/xnu_host.py",
+    "boards/ums512-hardware.json", "docs/m05-memory.json",
+    "shim/ums512/xnu_boot.h", "shim/ums512/handoff.S",
+    "xnu/platform/ums512/platform.c", "xnu/platform/ums512/platform.h",
+    "xnu/platform/ums512/diag.c", "xnu/platform/ums512/abi.c", "xnu/platform/ums512/entry_regs.S",
+    "xnu/platform/ums512/UMS512HardwarePlatform.cpp", "xnu/platform/ums512/ums512_hw_backend.h",
     "tools/image4_vendor.py", "tools/image4_check.py", "tests/security_abi.c", "tools/qemu_clock_probe.py",
     "xnu/platform/ums512/ums512_img4.c", "xnu/platform/ums512/ums512_img4.h",
     "xnu/platform/ums512/ums512_img4_vectors.h",
@@ -306,6 +314,11 @@ def run(args, name, report, env, cwd, timeout=1800):
             (report / (name + "-undefined.json")).write_text(json.dumps(missing, indent=2) + "\n")
             print("UNRESOLVED SYMBOLS: " + str(len(missing)), flush=True)
             print("\n".join(missing[:500]), flush=True)
+            references={m[1]:m[2].strip().splitlines() for m in re.finditer(
+                r'^\s*"([^"\n]+)", referenced from:\n(.*?)(?=^\s*"[^"\n]+", referenced from:|^ld:|\Z)',
+                '\n'.join(lines),re.M|re.S)}
+            (report/(name+'-undefined-references.json')).write_text(json.dumps(references,indent=2)+'\n')
+            print('UNRESOLVED REFERENCES: '+json.dumps(references,indent=2)[:40000],flush=True)
         failures = [line for line in lines if re.search(r"make(?:\[[0-9]+\])?: \*\*\*.*Error [0-9]+",line)]
         if failures:
             print('FAILED MAKE TARGETS:\n'+'\n'.join(dict.fromkeys(failures))[:10000],flush=True)
@@ -343,7 +356,10 @@ def run(args, name, report, env, cwd, timeout=1800):
         raise RuntimeError(f"{name} exit {proc.returncode}; see {logfile}")
 
 
-def build(work):
+def build(work, target="qemu"):
+    if target not in ('qemu','ums512hw'):raise ValueError('unknown native target')
+    hardware=target=='ums512hw'
+    machine='UMS512HW' if hardware else 'UMS512'
     if platform.system() != "Darwin":
         raise RuntimeError("native build needs macOS and real Xcode; no xcrun/SDK facade is used")
     lock, _ = specs()
@@ -355,7 +371,7 @@ def build(work):
     env["SOURCE_DATE_EPOCH"] = epoch
     env["ZERO_AR_DATE"] = "1" # Upstream ld64: zero N_OSO debug-map timestamps.
     env["KERNEL_BUILD_DATE"] = datetime.datetime.fromtimestamp(int(epoch), datetime.timezone.utc).isoformat()
-    env["KERNEL_BUILD_OBJROOT"] = "xnu-8796.141.3/DEVELOPMENT_ARM64_UMS512"
+    env["KERNEL_BUILD_OBJROOT"] = "xnu-8796.141.3/DEVELOPMENT_ARM64_"+machine
     version = subprocess.check_output(["/usr/bin/xcodebuild", "-version"], env=env, text=True, timeout=30).strip()
     if not version.startswith("Xcode " + lock["host"]["xcode"] + "\n"):
         raise ValueError("requires pinned Xcode 15.4 for the 8796 IORPC ABI: " + version)
@@ -373,11 +389,11 @@ def build(work):
     python3 = output("/usr/bin/xcrun", "--find", "python3")
     (bindir / "python").symlink_to(python3)
     env["PATH"] = str(bindir) + ":" + env["PATH"]
-    report = OUT / "report"
+    report = OUT / ("report-hardware" if hardware else "report")
     report.mkdir(parents=True, exist_ok=True)
     sdk = subprocess.check_output(["xcrun", "--sdk", "macosx", "--show-sdk-path"], env=env, text=True, timeout=30).strip()
     tools = {n: subprocess.check_output(["xcrun", "--find", n], env=env, text=True, timeout=30).strip()
-             for n in ("clang", "clang++", "ld", "iig")}
+             for n in ("clang", "clang++", "ld", "iig", "nm")}
     probe = work / "allocator-compiler.c"
     probe.write_text('''#if !__has_builtin(__builtin_xnu_type_summary) || !__has_builtin(__builtin_xnu_type_signature) || !__has_builtin(__builtin_xnu_types_compatible)
 #error Real XNU allocator type builtins are required
@@ -396,11 +412,17 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
         raise ValueError("compiler did not produce plain ARM64 Mach-O")
     (report / "toolchain.json").write_text(json.dumps({"xcode": version, "sdk": sdk, "tools": tools,
         "allocator_builtins_compiled": True}, indent=2) + "\n")
-    src = prepare(work)
+    if hardware:
+        from ums512_hardware_build import prepare as prepare_hardware
+        prepare_hardware(work,native=True)
+        src=work/'xnu'
+    else:
+        src = prepare(work)
     run([python3,ROOT/'tools/crypto_check.py',src/'libkern/ums512','--compiler',tools['clang']],
         'crypto-known-answer',report,env,work,120)
-    run([python3,ROOT/'tools/image4_check.py',src/'libkern/ums512_img4',src/'libkern/ums512',
-         '--compiler',tools['clang']], 'image4-verifier',report,env,work,120)
+    if not hardware:
+        run([python3,ROOT/'tools/image4_check.py',src/'libkern/ums512_img4',src/'libkern/ums512',
+             '--compiler',tools['clang']], 'image4-verifier',report,env,work,120)
     deps = {name: clone_work(name, work) for name in lock["sources"]}
     fake = work / "fakeroot"
     fake.mkdir()
@@ -411,7 +433,7 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
     # changes a build-tool path only; no target declaration is substituted.
     alias = src / "bsd/sys/make_symbol_aliasing.sh"
     rewrite(alias, 'AVAILABILITY_PL="${SDKROOT}/${DRIVERKITROOT}', 'AVAILABILITY_PL="${FAKEROOT_DIR}')
-    common = ["SDKROOT=macosx", "TARGET_CONFIGS=DEVELOPMENT ARM64 UMS512", "ARCH_CONFIGS=ARM64",
+    common = ["SDKROOT=macosx", "TARGET_CONFIGS=DEVELOPMENT ARM64 "+machine, "ARCH_CONFIGS=ARM64",
               "DSTROOT=" + str(fake), "FAKEROOT_DIR=" + str(fake), "KERNEL_BUILDS_IN_PARALLEL=1",
               "MEMORY_SIZE=" + output("/usr/sbin/sysctl", "-n", "hw.memsize"),
               "SYSCTL_HW_PHYSICALCPU=2", "SYSCTL_HW_LOGICALCPU=2"]
@@ -452,26 +474,27 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
               # with command generation. It must not be set for a real build.
               "CONCISE=0", "VERBOSE=NO"]
     from xnu_pthread import flags as pthread_flags
-    native.extend(pthread_flags(src,sdk,fake))
+    if not hardware:native.extend(pthread_flags(src,sdk,fake))
     from xnu_storage import flags as storage_flags, image as storage_image
-    run([python3,'-m','unittest','discover','-s',ROOT/'tests','-p','test_root_image.py'],
-        'root-image-negative',report,env,ROOT,60)
-    shutil.copyfile(Path(sdk)/'usr/include/TargetConditionals.h',
-                    src/'iokit/ums512_storage/include/TargetConditionals.h')
-    native.extend(storage_flags(src,sdk,fake))
-    print('SDK HFS key header available: '+str(any((Path(sdk)/p/'AppleKeyStore/AppleKeyStoreFSServices.h').is_file()
-          for p in ('System/Library/Frameworks/Kernel.framework/Headers',
-                    'System/Library/Frameworks/Kernel.framework/PrivateHeaders','usr/local/include'))),flush=True)
-    run([python3,'-m','unittest','discover','-s',ROOT/'tests','-p','test_user_fixture.py'],
-        'unsigned-init-negative',report,env,ROOT,60)
-    image_proof=storage_image(src,tools['clang'],tools['ld'])
-    (report/'root-image.json').write_text(json.dumps(image_proof,indent=2)+'\n')
-    (report/'userspace.json').write_text(json.dumps(image_proof['executable_fixture'],indent=2)+'\n')
-    print('ROOT IMAGE: '+json.dumps(image_proof),flush=True)
+    if not hardware:
+        run([python3,'-m','unittest','discover','-s',ROOT/'tests','-p','test_root_image.py'],
+            'root-image-negative',report,env,ROOT,60)
+        shutil.copyfile(Path(sdk)/'usr/include/TargetConditionals.h',
+                        src/'iokit/ums512_storage/include/TargetConditionals.h')
+        native.extend(storage_flags(src,sdk,fake))
+        print('SDK HFS key header available: '+str(any((Path(sdk)/p/'AppleKeyStore/AppleKeyStoreFSServices.h').is_file()
+              for p in ('System/Library/Frameworks/Kernel.framework/Headers',
+                        'System/Library/Frameworks/Kernel.framework/PrivateHeaders','usr/local/include'))),flush=True)
+        run([python3,'-m','unittest','discover','-s',ROOT/'tests','-p','test_user_fixture.py'],
+            'unsigned-init-negative',report,env,ROOT,60)
+        image_proof=storage_image(src,tools['clang'],tools['ld'])
+        (report/'root-image.json').write_text(json.dumps(image_proof,indent=2)+'\n')
+        (report/'userspace.json').write_text(json.dumps(image_proof['executable_fixture'],indent=2)+'\n')
+        print('ROOT IMAGE: '+json.dumps(image_proof),flush=True)
     run(["make", "installhdrs", "-j2", *native], "xnu-headers", report, env, src)
     xbuild("Libsystem", "installhdrs", ["FAKEROOT_DIR=" + str(fake)])
     run(["xcodebuild", "installhdrs", "-sdk", "macosx", "-jobs", "2", "ARCHS=arm64", "VALID_ARCHS=arm64",
-         "TARGET_CONFIGS=DEVELOPMENT ARM64 UMS512", "DSTROOT=" + str(fake), "FAKEROOT_DIR=" + str(fake),
+         "TARGET_CONFIGS=DEVELOPMENT ARM64 "+machine, "DSTROOT=" + str(fake), "FAKEROOT_DIR=" + str(fake),
          "OBJROOT=" + str(work / "libsyscall.obj"), "SYMROOT=" + str(work / "libsyscall.sym")],
         "libsyscall-headers", report, env, src / "libsyscall")
     for folder in ("include", "private"):
@@ -491,7 +514,7 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
     finally:
         objects = {}
         formats = {"Mach-O arm64 MH_OBJECT": 0, "LLVM bitcode (architecture not independently audited)": 0}
-        target = work / "xnu.obj/DEVELOPMENT_ARM64_UMS512"
+        target = work / ("xnu.obj/DEVELOPMENT_ARM64_"+machine)
         for path in [*target.rglob("*.o"), *target.rglob("*.cpo")]:
             with path.open("rb") as stream:
                 header = stream.read(16)
@@ -506,7 +529,13 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
         core = {n: h for n, h in objects.items() if Path(n).stem in (
             "arm_init", "arm_vm_init", "pmap", "vm_map", "vm_fault", "vm_page", "kalloc", "zalloc",
             "ipc_kmsg", "mach_msg", "device_tree", "OSObject", "IOService")}
-        inventory = {"object_formats": formats, "core_objects": core,
+        platform_objects={n:h for n,h in objects.items() if Path(n).stem in ('UMS512HardwarePlatform',
+            'ums512_platform','ums512_diag','ums512_abi','ums512_entry_regs','ums512_handoff','pe_fiq','pe_identify_machine')}
+        for name,record in platform_objects.items():
+            nm=subprocess.run([tools['nm'],'-u',str(target/name)],capture_output=True,text=True,timeout=30)
+            record['undefined_symbols']=nm.stdout.splitlines() if not nm.returncode else ['nm failed: '+nm.stderr[:1000]]
+        inventory = {"object_formats": formats, "core_objects": core,"platform_objects":platform_objects,
+                     "machine":machine,"hardware_qualified":False,
                      "scope": "compiled object inventory; final link status is recorded by the subsequent Mach-O audit",
                      "arm_init_executed": False}
         (report / "object-inventory.json").write_text(json.dumps(inventory, indent=2) + "\n")
@@ -520,7 +549,7 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
         config_proofs[component]=proof
     (report/'code-signing-config.json').write_text(json.dumps(config_proofs,indent=2)+'\n')
     print(json.dumps(dict(code_signing_config=config_proofs),indent=2),flush=True)
-    kernels = list((work / "xnu.obj").rglob("kernel.development.ums512.unstripped"))
+    kernels = list((work / "xnu.obj").rglob("kernel.development."+machine.lower()+".unstripped"))
     if not kernels and make_error:
         raise make_error
     if len(kernels) != 1:
@@ -534,7 +563,7 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
                   upstream_install_succeeded=make_error is None)
     (report / "kernel-audit.json").write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result, indent=2), flush=True)
-    shutil.copyfile(kernels[0], report / "kernel.development.ums512.macho")
+    shutil.copyfile(kernels[0], report / ("kernel.development."+machine.lower()+".macho"))
     print("LINKED AND AUDITED; actual arm_init/QEMU execution remains unverified", flush=True)
     if make_error:
         raise make_error
@@ -575,6 +604,7 @@ if __name__ == "__main__":
     parser.add_argument("--fetch", action="store_true")
     parser.add_argument("--prepare", action="store_true")
     parser.add_argument("--build", action="store_true")
+    parser.add_argument("--target",choices=('qemu','ums512hw'),default='qemu')
     parser.add_argument("--capsule", action="store_true")
     parser.add_argument("--work", type=Path, default=OUT / "work")
     args = parser.parse_args()
@@ -583,6 +613,6 @@ if __name__ == "__main__":
     if args.prepare:
         prepare(args.work)
     if args.build:
-        build(args.work)
+        build(args.work,target=args.target)
     if args.capsule:
         capsule()

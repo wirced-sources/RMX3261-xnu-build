@@ -40,17 +40,31 @@ option does not prove its implementation on Cortex. This open-source desktop
 profile is not the closed iOS kernel configuration. The real upstream unifdef
 preprocesses its conditional groups before feature-set validation.
 
-Native57/run40112465191 SUCCESS: original make install,37502800-byte ARM64
-MH_EXECUTE,18segments,76490 validated local relocations,0imports. Kernel SHA256
-4fc8d0663cbdb9c05d7e19cb3872814459577c4543581e357d928adde462281e.
-Two independent boots of that exact binary confirmed global enforcement1/RO/NX,
-genuine ubc_cs_blob_add return0, native cs_validate_page15/0/0, real EL0 entry,
-mov x16,#20, SVC0x80/getpid/PID1 return and program success-loop. Fresh EL1
-post-exec counters1/1/3/4/4 prove the controlled authorization and four actual
-HFS vnode denials. Counters are never read through kernel VA while stopped in
-EL0. Exact original audit/config/two traces/publication evidence are retained
-under history/native57; native56's enforcement0/read failure remains archived.
-This is a static owned lab program, not Apple launchd/dyld or a completed OS boot.
+Native61/run40122405101 SUCCESS: original make install,37503920-byte ARM64
+MH_EXECUTE,18segments,76494 validated local relocations,0imports. Kernel SHA256
+efd1fa07756968946d584d7cf89a804ca1a47ab2719e58532e307b05b37f5bef.
+Two independent boots of this exact binary confirmed real signed init PID1 and
+independently signed child PID2: HFS syscall I/O, fork, separate VM roots and
+private CoW pages, two rejected child execve, authenticated child exec, inherited
+pipe, exit37/wait4/status/reap and munmap. Both images executed in EL0. Global
+enforcement1/RO/NX, two stock attachment returns0 and native executed-page
+validation15/0/0 for each vnode passed. Fresh final-getpid EL1 counters2/2/6/6/4;
+no kernel VA read while stopped in EL0. Exact audit/config/two traces/publication
+evidence: history/native61. Native57 and failures58/59/60 remain separate history.
+These are static owned lab programs, not Apple launchd/dyld or a completed OS boot.
+
+The Cortex board now declares __ARM_PAN_AVAILABLE__, enabling the original
+copyio.c PAN0/PAN1 user-copy windows and default privileged PAN protection.
+Cold entry verifies ID_AA64MMFR1.PAN; both native61 boots read2. The feature was
+previously absent, making the stock user-access helpers empty despite PAN1
+after EL0. SA0/SA, MAC, CONFIG_PROTECT, W^X and watchdog thresholds are unchanged.
+Native59's earlier first-open fault lacks ESR/FAR, so its exact syndrome remains
+unknown. Native60's instruction-clock experiment hung after kernel_bootstrap;
+native61 retains the original native57 QEMU time configuration. The separate
+owned EL1 clock/PAN fixture passes on pinned9.2.4 (50002ticks/62.5MHz), but does
+not establish full-XNU icount compatibility. --instruction-clock is opt-in only.
+The observer captures raw ESR/FAR/ELR/SPSR for new unknown stops and bounds stop
+acknowledgement to5sec; it never writes guest memory/registers to pass tests.
 
 Before dependency builds the driver compiles and checks an ARM64 Mach-O using
 the real allocator builtins. Generated headers use Apple MIG and IIG. It then

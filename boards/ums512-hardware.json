@@ -1,0 +1,802 @@
+{
+  "schema": 1,
+  "source": "analysis-only reconstructed FDT",
+  "sha256": "0600e5c6005656ea9b1b87c04601b5491f60277e4ee7f37829cc1cd738284fd8",
+  "bytes": 283729,
+  "node_count": 929,
+  "ram": [
+    {
+      "base": "0x80000000",
+      "size": "0xfffff000",
+      "end_exclusive": "0x17ffff000"
+    }
+  ],
+  "reserved_memory": [
+    {
+      "path": "/reserved-memory/writeback-mem@ff562000",
+      "reg": [
+        {
+          "base": "0xff562000",
+          "size": "0xa1e000",
+          "end_exclusive": "0xfff80000"
+        }
+      ],
+      "no-map": false,
+      "reusable": false
+    },
+    {
+      "path": "/reserved-memory/framebuffer-mem@fd708000",
+      "reg": [
+        {
+          "base": "0xfd708000",
+          "size": "0x1e5a000",
+          "end_exclusive": "0xff562000"
+        }
+      ],
+      "no-map": false,
+      "reusable": false
+    },
+    {
+      "path": "/reserved-memory/faceid-mem@efaae000",
+      "reg": [
+        {
+          "base": "0xefaae000",
+          "size": "0x500000",
+          "end_exclusive": "0xeffae000"
+        }
+      ],
+      "no-map": false,
+      "reusable": false
+    },
+    {
+      "path": "/reserved-memory/logobuffer@9e000000",
+      "reg": [
+        {
+          "base": "0x9e000000",
+          "size": "0x9e4000",
+          "end_exclusive": "0x9e9e4000"
+        }
+      ],
+      "no-map": false,
+      "reusable": false
+    },
+    {
+      "path": "/reserved-memory/ddrbist-mem@80000000",
+      "reg": [
+        {
+          "base": "0x80000000",
+          "size": "0x1000",
+          "end_exclusive": "0x80001000"
+        }
+      ],
+      "no-map": false,
+      "reusable": false
+    },
+    {
+      "path": "/reserved-memory/rebootescrow@0x81ff0000",
+      "reg": [
+        {
+          "base": "0x81ff0000",
+          "size": "0x10000",
+          "end_exclusive": "0x82000000"
+        }
+      ],
+      "no-map": true,
+      "reusable": false
+    },
+    {
+      "path": "/reserved-memory/audio-mem@87500000",
+      "reg": [
+        {
+          "base": "0x87500000",
+          "size": "0x300000",
+          "end_exclusive": "0x87800000"
+        }
+      ],
+      "no-map": false,
+      "reusable": false
+    },
+    {
+      "path": "/reserved-memory/sipc-mem@87800000",
+      "reg": [
+        {
+          "base": "0x87800000",
+          "size": "0x800000",
+          "end_exclusive": "0x88000000"
+        }
+      ],
+      "no-map": false,
+      "reusable": false
+    },
+    {
+      "path": "/reserved-memory/sp-ddr-mem@88000000",
+      "reg": [
+        {
+          "base": "0x88000000",
+          "size": "0x300000",
+          "end_exclusive": "0x88300000"
+        }
+      ],
+      "no-map": false,
+      "reusable": false
+    },
+    {
+      "path": "/reserved-memory/audiodsp-mem@89000000",
+      "reg": [
+        {
+          "base": "0x89000000",
+          "size": "0x600000",
+          "end_exclusive": "0x89600000"
+        }
+      ],
+      "no-map": false,
+      "reusable": false
+    },
+    {
+      "path": "/reserved-memory/cp-mem@89600000",
+      "reg": [
+        {
+          "base": "0x89600000",
+          "size": "0x4900000",
+          "end_exclusive": "0x8df00000"
+        }
+      ],
+      "no-map": false,
+      "reusable": false
+    },
+    {
+      "path": "/reserved-memory/sml-mem@94000000",
+      "reg": [
+        {
+          "base": "0x94000000",
+          "size": "0x40000",
+          "end_exclusive": "0x94040000"
+        }
+      ],
+      "no-map": false,
+      "reusable": false
+    },
+    {
+      "path": "/reserved-memory/tos-mem@94040000",
+      "reg": [
+        {
+          "base": "0x94060000",
+          "size": "0x4fa0000",
+          "end_exclusive": "0x99000000"
+        }
+      ],
+      "no-map": false,
+      "reusable": false
+    },
+    {
+      "path": "/reserved-memory/ramoops@fff80000",
+      "reg": [
+        {
+          "base": "0xfff80000",
+          "size": "0x40000",
+          "end_exclusive": "0xfffc0000"
+        }
+      ],
+      "no-map": false,
+      "reusable": false
+    },
+    {
+      "path": "/reserved-memory/debug-mem@100000000",
+      "reg": [
+        {
+          "base": "0x100000000",
+          "size": "0x1000",
+          "end_exclusive": "0x100001000"
+        }
+      ],
+      "no-map": false,
+      "reusable": false
+    },
+    {
+      "path": "/reserved-memory/debug-mem@844c0000",
+      "reg": [
+        {
+          "base": "0x844c0000",
+          "size": "0x4000",
+          "end_exclusive": "0x844c4000"
+        }
+      ],
+      "no-map": false,
+      "reusable": false
+    }
+  ],
+  "memreserve": [
+    {
+      "base": "0x94040000",
+      "size": "0x20000"
+    }
+  ],
+  "cpus": [
+    {
+      "path": "/cpus/cpu@0",
+      "compatible": [
+        "arm,cortex-a55",
+        "arm,armv8"
+      ],
+      "mpidr": [
+        "0x0"
+      ],
+      "enable-method": [
+        "psci"
+      ]
+    },
+    {
+      "path": "/cpus/cpu@100",
+      "compatible": [
+        "arm,cortex-a55",
+        "arm,armv8"
+      ],
+      "mpidr": [
+        "0x100"
+      ],
+      "enable-method": [
+        "psci"
+      ]
+    },
+    {
+      "path": "/cpus/cpu@200",
+      "compatible": [
+        "arm,cortex-a55",
+        "arm,armv8"
+      ],
+      "mpidr": [
+        "0x200"
+      ],
+      "enable-method": [
+        "psci"
+      ]
+    },
+    {
+      "path": "/cpus/cpu@300",
+      "compatible": [
+        "arm,cortex-a55",
+        "arm,armv8"
+      ],
+      "mpidr": [
+        "0x300"
+      ],
+      "enable-method": [
+        "psci"
+      ]
+    },
+    {
+      "path": "/cpus/cpu@400",
+      "compatible": [
+        "arm,cortex-a55",
+        "arm,armv8"
+      ],
+      "mpidr": [
+        "0x400"
+      ],
+      "enable-method": [
+        "psci"
+      ]
+    },
+    {
+      "path": "/cpus/cpu@500",
+      "compatible": [
+        "arm,cortex-a55",
+        "arm,armv8"
+      ],
+      "mpidr": [
+        "0x500"
+      ],
+      "enable-method": [
+        "psci"
+      ]
+    },
+    {
+      "path": "/cpus/cpu@600",
+      "compatible": [
+        "arm,cortex-a75",
+        "arm,armv8"
+      ],
+      "mpidr": [
+        "0x600"
+      ],
+      "enable-method": [
+        "psci"
+      ]
+    },
+    {
+      "path": "/cpus/cpu@700",
+      "compatible": [
+        "arm,cortex-a75",
+        "arm,armv8"
+      ],
+      "mpidr": [
+        "0x700"
+      ],
+      "enable-method": [
+        "psci"
+      ]
+    }
+  ],
+  "devices": [
+    {
+      "path": "/soc/mm/gpu@60000000",
+      "compatible": [
+        "sprd,mali-gondul"
+      ],
+      "status": [],
+      "reg": [
+        {
+          "base": "0x60000000",
+          "size": "0x100000",
+          "end_exclusive": "0x60100000"
+        }
+      ],
+      "interrupts": [
+        0,
+        60,
+        4,
+        0,
+        60,
+        4,
+        0,
+        60,
+        4
+      ]
+    },
+    {
+      "path": "/soc/ap-apb/serial@70000000",
+      "compatible": [
+        "sprd,ums518-uart",
+        "sprd,sc9836-uart"
+      ],
+      "status": [
+        "okay"
+      ],
+      "reg": [
+        {
+          "base": "0x70000000",
+          "size": "0x100",
+          "end_exclusive": "0x70000100"
+        }
+      ],
+      "interrupts": [
+        0,
+        2,
+        4
+      ]
+    },
+    {
+      "path": "/soc/ap-apb/serial@70100000",
+      "compatible": [
+        "sprd,ums518-uart",
+        "sprd,sc9836-uart"
+      ],
+      "status": [
+        "okay"
+      ],
+      "reg": [
+        {
+          "base": "0x70100000",
+          "size": "0x100",
+          "end_exclusive": "0x70100100"
+        }
+      ],
+      "interrupts": [
+        0,
+        3,
+        4
+      ]
+    },
+    {
+      "path": "/soc/ap-apb/i2c@70300000",
+      "compatible": [
+        "sprd,sharkl5pro-i2c"
+      ],
+      "status": [
+        "okay"
+      ],
+      "reg": [
+        {
+          "base": "0x70300000",
+          "size": "0x100",
+          "end_exclusive": "0x70300100"
+        }
+      ],
+      "interrupts": [
+        0,
+        11,
+        4
+      ],
+      "clock-frequency": [
+        400000
+      ]
+    },
+    {
+      "path": "/soc/ap-apb/i2c@70400000",
+      "compatible": [
+        "sprd,sharkl5pro-i2c"
+      ],
+      "status": [
+        "okay"
+      ],
+      "reg": [
+        {
+          "base": "0x70400000",
+          "size": "0x100",
+          "end_exclusive": "0x70400100"
+        }
+      ],
+      "interrupts": [
+        0,
+        12,
+        4
+      ],
+      "clock-frequency": [
+        400000
+      ]
+    },
+    {
+      "path": "/soc/ap-apb/i2c@70500000",
+      "compatible": [
+        "sprd,sharkl5pro-i2c"
+      ],
+      "status": [
+        "disable"
+      ],
+      "reg": [
+        {
+          "base": "0x70500000",
+          "size": "0x100",
+          "end_exclusive": "0x70500100"
+        }
+      ],
+      "interrupts": [
+        0,
+        13,
+        4
+      ],
+      "clock-frequency": [
+        400000
+      ]
+    },
+    {
+      "path": "/soc/ap-apb/i2c@70600000",
+      "compatible": [
+        "sprd,sharkl5pro-i2c"
+      ],
+      "status": [
+        "disable"
+      ],
+      "reg": [
+        {
+          "base": "0x70600000",
+          "size": "0x100",
+          "end_exclusive": "0x70600100"
+        }
+      ],
+      "interrupts": [
+        0,
+        14,
+        4
+      ],
+      "clock-frequency": [
+        400000
+      ]
+    },
+    {
+      "path": "/soc/ap-apb/i2c@70700000",
+      "compatible": [
+        "sprd,sharkl5pro-i2c"
+      ],
+      "status": [
+        "okay"
+      ],
+      "reg": [
+        {
+          "base": "0x70700000",
+          "size": "0x100",
+          "end_exclusive": "0x70700100"
+        }
+      ],
+      "interrupts": [
+        0,
+        15,
+        4
+      ],
+      "clock-frequency": [
+        400000
+      ]
+    },
+    {
+      "path": "/soc/ap-apb/sdio@71400000",
+      "compatible": [
+        "sprd,sdhc-r11p1"
+      ],
+      "status": [
+        "okay"
+      ],
+      "reg": [
+        {
+          "base": "0x71400000",
+          "size": "0x1000",
+          "end_exclusive": "0x71401000"
+        }
+      ],
+      "interrupts": [
+        0,
+        10,
+        4
+      ],
+      "bus-width": [
+        8
+      ]
+    },
+    {
+      "path": "/soc/ap-apb/sdio@71100000",
+      "compatible": [
+        "sprd,sdhc-r11p1"
+      ],
+      "status": [
+        "okay"
+      ],
+      "reg": [
+        {
+          "base": "0x71100000",
+          "size": "0x1000",
+          "end_exclusive": "0x71101000"
+        }
+      ],
+      "interrupts": [
+        0,
+        19,
+        4
+      ],
+      "bus-width": [
+        4
+      ]
+    },
+    {
+      "path": "/soc/ap-apb/sdio@71200000",
+      "compatible": [
+        "sprd,sdhc-r11p1"
+      ],
+      "status": [
+        "okay"
+      ],
+      "reg": [
+        {
+          "base": "0x71200000",
+          "size": "0x1000",
+          "end_exclusive": "0x71201000"
+        }
+      ],
+      "interrupts": [
+        0,
+        20,
+        4
+      ],
+      "bus-width": [
+        4
+      ]
+    },
+    {
+      "path": "/soc/ap-apb/sdio@71300000",
+      "compatible": [
+        "sprd,sdhc-r11p1"
+      ],
+      "status": [
+        "disabled"
+      ],
+      "reg": [
+        {
+          "base": "0x71300000",
+          "size": "0x1000",
+          "end_exclusive": "0x71301000"
+        }
+      ],
+      "interrupts": [
+        0,
+        21,
+        4
+      ]
+    },
+    {
+      "path": "/soc/ap-ahb/dsi@20400000",
+      "compatible": [
+        "sprd,dsi-host"
+      ],
+      "status": [
+        "okay"
+      ],
+      "reg": [
+        {
+          "base": "0x20400000",
+          "size": "0x1000",
+          "end_exclusive": "0x20401000"
+        }
+      ],
+      "interrupts": [
+        0,
+        30,
+        4,
+        0,
+        31,
+        4
+      ]
+    },
+    {
+      "path": "/soc/aon/i2c@32060000",
+      "compatible": [
+        "sprd,sharkl5pro-hw-i2c"
+      ],
+      "status": [
+        "okay"
+      ],
+      "reg": [
+        {
+          "base": "0x32060000",
+          "size": "0x1000",
+          "end_exclusive": "0x32061000"
+        }
+      ],
+      "interrupts": [
+        0,
+        68,
+        4
+      ],
+      "clock-frequency": [
+        360000
+      ]
+    },
+    {
+      "path": "/soc/aon/timer@32040000",
+      "compatible": [
+        "sprd,sysfrt-timer"
+      ],
+      "status": [],
+      "reg": [
+        {
+          "base": "0x32040000",
+          "size": "0x10",
+          "end_exclusive": "0x32040010"
+        }
+      ],
+      "interrupts": []
+    },
+    {
+      "path": "/soc/aon/timer@32050000",
+      "compatible": [
+        "sprd,sharkl5Pro-timer"
+      ],
+      "status": [],
+      "reg": [
+        {
+          "base": "0x32050000",
+          "size": "0x20",
+          "end_exclusive": "0x32050020"
+        }
+      ],
+      "interrupts": [
+        0,
+        71,
+        4
+      ]
+    },
+    {
+      "path": "/soc/aon/timer@32050020",
+      "compatible": [
+        "sprd,sharkl5Pro-suspend-timer"
+      ],
+      "status": [],
+      "reg": [
+        {
+          "base": "0x32050020",
+          "size": "0x20",
+          "end_exclusive": "0x32050040"
+        }
+      ],
+      "interrupts": []
+    },
+    {
+      "path": "/soc/aon/timer@322e0000",
+      "compatible": [
+        "sprd,syst-timer"
+      ],
+      "status": [],
+      "reg": [
+        {
+          "base": "0x322e0000",
+          "size": "0x10",
+          "end_exclusive": "0x322e0010"
+        }
+      ],
+      "interrupts": []
+    },
+    {
+      "path": "/soc/aon/usb@5fff0000",
+      "compatible": [
+        "sprd,sharkl5-musb",
+        "sprd,sharkl5pro-musb"
+      ],
+      "status": [],
+      "reg": [
+        {
+          "base": "0x5fff0000",
+          "size": "0x2000",
+          "end_exclusive": "0x5fff2000"
+        }
+      ],
+      "interrupts": [
+        0,
+        69,
+        4
+      ]
+    },
+    {
+      "path": "/psci",
+      "compatible": [
+        "arm,psci-0.2"
+      ],
+      "status": [],
+      "reg": [],
+      "interrupts": [],
+      "method": [
+        "smc"
+      ]
+    },
+    {
+      "path": "/interrupt-controller@12000000",
+      "compatible": [
+        "arm,gic-v3"
+      ],
+      "status": [],
+      "reg": [
+        {
+          "base": "0x12000000",
+          "size": "0x20000",
+          "end_exclusive": "0x12020000"
+        },
+        {
+          "base": "0x12040000",
+          "size": "0x100000",
+          "end_exclusive": "0x12140000"
+        }
+      ],
+      "interrupts": [
+        1,
+        9,
+        4
+      ],
+      "redistributor-stride": [
+        0,
+        131072
+      ]
+    },
+    {
+      "path": "/timer",
+      "compatible": [
+        "arm,armv8-timer"
+      ],
+      "status": [],
+      "reg": [],
+      "interrupts": [
+        1,
+        13,
+        4,
+        1,
+        14,
+        4,
+        1,
+        11,
+        4,
+        1,
+        10,
+        4
+      ]
+    }
+  ],
+  "stdout-path": [
+    "/soc/ap-apb/serial@70100000"
+  ],
+  "stdout_node": "/soc/ap-apb/serial@70100000"
+}
