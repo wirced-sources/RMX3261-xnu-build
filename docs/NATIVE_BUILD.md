@@ -22,8 +22,13 @@ another preparation. Existing workspaces are never reset or deleted.
 
 The native configuration copies upstream `config/MASTER.arm64.MacOSX`, matching
 the MacOSX SDK and the profile used by ios-sweet, adding only
-`ums512 nos_arm_asm nos_arm_pmap config_enforce_signed_code`. The last feature
-strengthens the MacOSX default to stock global process code-signing enforcement;
+`ums512 nos_arm_asm nos_arm_pmap config_enforce_signed_code`. The board also
+declares `options CONFIG_ENFORCE_SIGNED_CODE`: public MASTER has the attribute
+name but no options declaration, so selecting the attribute alone had no effect
+in native56. Real SETUP/config now emits the compiler's CONFIG_DEFINES option,
+consumed by MakeInc.def. Local and CI probes preprocess the unchanged kern_cs.c
+initializer to1, with an absent-option negative control of0. This strengthens
+the MacOSX default to stock global process code-signing enforcement;
 attachment errors must never be ignored for the lab user process. Protection feature groups, allocator metadata,
 MACF and integrity policies are retained. Only KPC/kperf profiling is excluded:
 the required Apple PMU source is absent and no Cortex backend exists. Apple
@@ -34,6 +39,18 @@ Apple-specific hardware features still require porting; preserving a config
 option does not prove its implementation on Cortex. This open-source desktop
 profile is not the closed iOS kernel configuration. The real upstream unifdef
 preprocesses its conditional groups before feature-set validation.
+
+Native57/run40112465191 SUCCESS: original make install,37502800-byte ARM64
+MH_EXECUTE,18segments,76490 validated local relocations,0imports. Kernel SHA256
+4fc8d0663cbdb9c05d7e19cb3872814459577c4543581e357d928adde462281e.
+Two independent boots of that exact binary confirmed global enforcement1/RO/NX,
+genuine ubc_cs_blob_add return0, native cs_validate_page15/0/0, real EL0 entry,
+mov x16,#20, SVC0x80/getpid/PID1 return and program success-loop. Fresh EL1
+post-exec counters1/1/3/4/4 prove the controlled authorization and four actual
+HFS vnode denials. Counters are never read through kernel VA while stopped in
+EL0. Exact original audit/config/two traces/publication evidence are retained
+under history/native57; native56's enforcement0/read failure remains archived.
+This is a static owned lab program, not Apple launchd/dyld or a completed OS boot.
 
 Before dependency builds the driver compiles and checks an ARM64 Mach-O using
 the real allocator builtins. Generated headers use Apple MIG and IIG. It then

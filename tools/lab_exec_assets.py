@@ -66,44 +66,53 @@ authorityKeyIdentifier=keyid,issuer
         (crypto/'lab_exec_trust.h').write_text('/* Public per-build pinned lab chain, no private keys. */\n'+trust,encoding='utf-8',newline='\n')
         unsigned=build_fixture(work,staging,clang,ld,name='unsigned-init')
         owned=build_fixture(work,staging,clang,ld,user=True)
-        target=staging/'sbin/launchd';data=bytearray(target.read_bytes())
-        count,size=struct.unpack_from('<II',data,16);at=32;linkedit=None
-        for _ in range(count):
-            cmd,length=struct.unpack_from('<II',data,at)
-            if cmd==0x19 and data[at+8:at+24].rstrip(b'\0')==b'__LINKEDIT': linkedit=at
-            at+=length
-        if at!=32+size or linkedit is None or any(data[at:at+16]): raise ValueError('owned Mach-O has no signature-command padding/linkedit')
-        sig_at=(len(data)+16383)&-16384
-        data.extend(b'\0'*(sig_at-len(data)))
-        ident=b'org.rmx.qemu.init\0';slots=(sig_at+16383)//16384
-        cdfile,cmsfile=crypto/'code-directory',crypto/'signature.cms'
-        def cms(content):
-            cdfile.write_bytes(content)
-            run('cms','-sign','-binary','-noattr','-nosmimecap','-md','sha256','-in',cdfile,
-                '-signer',leaf,'-inkey',leaf_key,'-certfile',root,'-outform','DER','-out',cmsfile)
-            return cmsfile.read_bytes()
-        cdlen=48+len(ident)+slots*32
-        cmslen=len(cms(b'size probe; detached RSA signature has fixed width'))
-        total=28+cdlen+8+cmslen
-        struct.pack_into('<II',data,16,count+1,size+16)
-        struct.pack_into('<4I',data,at,0x1d,16,sig_at,total)
-        off=struct.unpack_from('<Q',data,linkedit+40)[0]
-        struct.pack_into('<Q',data,linkedit+32,((sig_at+total-off)+16383)&-16384)
-        struct.pack_into('<Q',data,linkedit+48,sig_at+total-off)
-        cd=struct.pack('>9I4B2I',0xfade0c02,cdlen,0x20100,0x300,48+len(ident),48,0,slots,sig_at,32,2,0,14,0,0)+ident
-        cd+=b''.join(hashlib.sha256(data[i*16384:min(sig_at,(i+1)*16384)]).digest() for i in range(slots))
-        signature=cms(cd)
-        if len(signature)!=cmslen: raise ValueError('unexpected CMS size change')
-        run('cms','-verify','-binary','-inform','DER','-in',cmsfile,'-content',cdfile,'-CAfile',root,'-purpose','any','-out',crypto/'verified-directory')
-        sb=struct.pack('>7I',0xfade0cc0,total,2,0,28,0x10000,28+cdlen)+cd+struct.pack('>2I',0xfade0b01,8+cmslen)+signature
-        data+=sb;target.write_bytes(data);target.chmod(0o755)
-        for name,offset in [('altered-init',int(owned['entry'],16)-0x100000000),('bad-cms-init',len(data)-1)]:
-            bad=bytearray(data);bad[offset]^=1;(staging/'sbin'/name).write_bytes(bad);(staging/'sbin'/name).chmod(0o755)
-        result=dict(bytes=len(data),sha256=hashlib.sha256(data).hexdigest(),entry=owned['entry'],
-            signature_offset=sig_at,signature_bytes=len(sb),cd_sha256=hashlib.sha256(cd).hexdigest(),
-            leaf_sha256=hashlib.sha256(leaf_der).hexdigest(),root_sha256=hashlib.sha256(root_der).hexdigest(),
-            laboratory_only=True,private_keys_exported=False,apple_userland=False,syscall='Darwin ARM64 getpid20, svc0x80',
-            unsigned_fixture=unsigned)
+        def sign_one(name,owned,identifier):
+            target=staging/'sbin'/name;data=bytearray(target.read_bytes())
+            count,size=struct.unpack_from('<II',data,16);at=32;linkedit=None
+            for _ in range(count):
+                cmd,length=struct.unpack_from('<II',data,at)
+                if cmd==0x19 and data[at+8:at+24].rstrip(b'\0')==b'__LINKEDIT': linkedit=at
+                at+=length
+            if at!=32+size or linkedit is None or any(data[at:at+16]): raise ValueError('owned Mach-O has no signature-command padding/linkedit')
+            sig_at=(len(data)+16383)&-16384
+            data.extend(b'\0'*(sig_at-len(data)))
+            ident=identifier.encode()+b'\0';slots=(sig_at+16383)//16384
+            cdfile,cmsfile=crypto/'code-directory',crypto/'signature.cms'
+            def cms(content):
+                cdfile.write_bytes(content)
+                run('cms','-sign','-binary','-noattr','-nosmimecap','-md','sha256','-in',cdfile,
+                    '-signer',leaf,'-inkey',leaf_key,'-certfile',root,'-outform','DER','-out',cmsfile)
+                return cmsfile.read_bytes()
+            cdlen=48+len(ident)+slots*32
+            cmslen=len(cms(b'size probe; detached RSA signature has fixed width'))
+            total=28+cdlen+8+cmslen
+            struct.pack_into('<II',data,16,count+1,size+16)
+            struct.pack_into('<4I',data,at,0x1d,16,sig_at,total)
+            off=struct.unpack_from('<Q',data,linkedit+40)[0]
+            struct.pack_into('<Q',data,linkedit+32,((sig_at+total-off)+16383)&-16384)
+            struct.pack_into('<Q',data,linkedit+48,sig_at+total-off)
+            cd=struct.pack('>9I4B2I',0xfade0c02,cdlen,0x20100,0x300,48+len(ident),48,0,slots,sig_at,32,2,0,14,0,0)+ident
+            cd+=b''.join(hashlib.sha256(data[i*16384:min(sig_at,(i+1)*16384)]).digest() for i in range(slots))
+            signature=cms(cd)
+            if len(signature)!=cmslen: raise ValueError('unexpected CMS size change')
+            run('cms','-verify','-binary','-inform','DER','-in',cmsfile,'-content',cdfile,'-CAfile',root,'-purpose','any','-out',crypto/'verified-directory')
+            sb=struct.pack('>7I',0xfade0cc0,total,2,0,28,0x10000,28+cdlen)+cd+struct.pack('>2I',0xfade0b01,8+cmslen)+signature
+            data+=sb;target.write_bytes(data);target.chmod(0o755)
+            return dict(bytes=len(data),sha256=hashlib.sha256(data).hexdigest(),entry=owned["entry"],
+                labels=owned["labels"],signature_offset=sig_at,signature_bytes=len(sb),cd_sha256=hashlib.sha256(cd).hexdigest(),
+                entry_file_offset=owned["entry_file_offset"],identifier=identifier)
+        result=sign_one("launchd",owned,"org.rmx.qemu.init")
+        child=build_fixture(work,staging,clang,ld,name="lab-child",user=True)
+        child=sign_one("lab-child",child,"org.rmx.qemu.child")
+        for name,base,offset in [("altered-init","launchd",owned["entry_file_offset"]),("bad-cms-init","launchd",-1),
+                                 ("altered-child","lab-child",child["entry_file_offset"])]:
+            bad=bytearray((staging/"sbin"/base).read_bytes());bad[offset]^=1
+            (staging/"sbin"/name).write_bytes(bad);(staging/"sbin"/name).chmod(0o755)
+        shutil.copyfile(staging/"sbin/unsigned-init",staging/"sbin/unsigned-child")
+        result.update(leaf_sha256=hashlib.sha256(leaf_der).hexdigest(),root_sha256=hashlib.sha256(root_der).hexdigest(),
+            laboratory_only=True,private_keys_exported=False,apple_userland=False,
+            syscall="Darwin ARM64 fork/execve/exit/wait4, fd IO, pipe, mmap/munmap",
+            unsigned_fixture=unsigned,child=child,profile="process-lifecycle-v1")
         if include_foreign:
             # A genuine independently valid chain, deliberately absent from
             # the primary kernel pins. Its private keys are also discarded.
@@ -164,8 +173,9 @@ int main(int argc,char **argv) {
     if sanitize: args+=['-fsanitize=address,undefined','-fno-sanitize-recover=all']
     if platform.system()=='Darwin': args+=['-isysroot',subprocess.check_output(['xcrun','--sdk','macosx','--show-sdk-path'],text=True).strip()]
     subprocess.run(args,check=True,timeout=120)
-    negatives=[asset.parent/n for n in ('unsigned-init','altered-init','bad-cms-init','foreign-init')]
+    negatives=[asset.parent/n for n in ('unsigned-init','altered-init','bad-cms-init','foreign-init','unsigned-child','altered-child')]
     if not all(p.is_file() for p in negatives):raise ValueError('missing actual untrusted CMS fixtures')
     command([*(['wsl','-d','Ubuntu','--exec'] if platform.system()=='Windows' else []),path(binary),path(asset),str(int(time.time())),
              *map(path,negatives)])
-    print('CMS/CodeDirectory actual host verifier PASS',flush=True)
+    command([*(['wsl','-d','Ubuntu','--exec'] if platform.system()=='Windows' else []),path(binary),path(asset.parent/'lab-child'),str(int(time.time())),*map(path,negatives)])
+    print('CMS/CodeDirectory two signed images and six negative assets actual host verifier PASS',flush=True)

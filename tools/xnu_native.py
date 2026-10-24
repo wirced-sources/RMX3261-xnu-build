@@ -70,6 +70,7 @@ CAPSULE = (
     "xnu/platform/ums512/ums512_hfs_keys.h", "xnu/platform/ums512/ums512_hfs_keys.inc",
     "tests/test_root_image.py", "tools/qemu_user_fixture.py", "tests/test_user_fixture.py",
     "tools/lab_exec_assets.py", "xnu/platform/ums512/ums512_lab_codesign.h",
+    "xnu/userspace/lab_init.s", "xnu/userspace/lab_child.s", "tools/user_lifecycle.py",
     "xnu/platform/ums512/ums512_lab_codesign.c", "xnu/platform/ums512/ums512_lab_vnode.c",
     "xnu/platform/ums512/ums512_rootfs_test.c",
     "tools/xnu_pthread.py", "xnu/platform/ums512/ums512_pthread.c",
@@ -81,7 +82,7 @@ CAPSULE = (
     "tools/xnu_native.py", "tools/xnu_config.py", "tools/macho_kernel.py", "tools/xnu_kernel_qemu.py", "tools/fdt.py", "tools/qemu_host.py", "xnu/native.lock.json",
     "xnu/sources.lock.json", "xnu/platform/ums512/UMS512.h",
     "xnu/platform/ums512/cpu_entry.h", "ci/xnu-native.yml",
-    "docs/NATIVE_BUILD.md", "docs/LAB_CODE_SIGNING.md", *PATCHES,
+    "docs/NATIVE_BUILD.md", "docs/LAB_CODE_SIGNING.md", "docs/PROCESS_LIFECYCLE.md", *PATCHES,
 )
 
 
@@ -465,6 +466,7 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
         'unsigned-init-negative',report,env,ROOT,60)
     image_proof=storage_image(src,tools['clang'],tools['ld'])
     (report/'root-image.json').write_text(json.dumps(image_proof,indent=2)+'\n')
+    (report/'userspace.json').write_text(json.dumps(image_proof['executable_fixture'],indent=2)+'\n')
     print('ROOT IMAGE: '+json.dumps(image_proof),flush=True)
     run(["make", "installhdrs", "-j2", *native], "xnu-headers", report, env, src)
     xbuild("Libsystem", "installhdrs", ["FAKEROOT_DIR=" + str(fake)])

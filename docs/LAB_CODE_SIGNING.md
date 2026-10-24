@@ -1,15 +1,18 @@
 # Isolated QEMU executable authorization
 
-Implemented on 2026-10-24 from da821f2. Native54 built/linked; execution pending.
-Native55 additionally enables stock CONFIG_ENFORCE_SIGNED_CODE. Verified native53
-still denies all user exec. No signed EL0 success is claimed by this document.
+Native57 confirmed enforced signed EL0/getpid twice; see history/native57.
+The next process-lifecycle implementation is locally built/checked, awaiting
+native58 runtime evidence. Native57 remains the last confirmed native baseline.
 
-The new file is our own static ARM64 Mach-O. Its first instructions issue
-Darwin getpid20 via SVC0x80, check returned PID1 and reach a bounded success
-loop. It contains no Apple launchd, dyld, library dependency or entitlement.
+The files are our own static ARM64 Mach-O init and child. Their first instructions
+issue Darwin getpid20 via SVC0x80. The lifecycle programs use native fd I/O,
+fork/execve/exit/wait4 and private NX mmap; see PROCESS_LIFECYCLE.md. They contain
+no Apple launchd, dyld, library dependency or entitlement. Each is signed
+independently with a distinct CodeDirectory/CMS under the same controlled leaf.
 Real compiler/linker output is extended with LC_CODE_SIGNATURE and a standard
 embedded-signature SuperBlob. CodeDirectory0x20100 uses SHA256 and16KiB slots,
-HARD|KILL, no special slots/team/platform flag, exact laboratory identifier and
+HARD|KILL, no special slots/team/platform flag, one of the two exact laboratory
+identifiers org.rmx.qemu.init/org.rmx.qemu.child and
 full prefix coverage. Each signature includes a detached standard CMS SignedData.
 
 The intentionally narrow [RFC5652 CMS](https://www.rfc-editor.org/rfc/rfc5652)
@@ -97,6 +100,15 @@ generated-header name. The same actual generated Makefiles are checked in CI;
 only a new runtime readback1 with RO/NX can confirm enforcement in that kernel.
 
 This proves only the owned laboratory process when the native test passes.
+Native57/run40112465191 now passed TWO real boots of the exact full kernel
+SHA2564fc8d0663cbdb9c05d7e19cb3872814459577c4543581e357d928adde462281e.
+Global enforcement1/RO/NX, stock attachment return0, native page validation
+15/0/0 and EL0/getpid/PID1/success-loop were observed. Fresh getpid-return EL1
+counters were exec1/signature1/files3/denials4/vnode-negatives4 in each boot.
+Four genuine vnode authorization selftests rejected unsigned code, modified
+code page, damaged CMS and an independently valid foreign chain. They do not
+claim four separate exec attempts or a measured invalid-page kill. Exact audit,
+configuration and two traces: history/native57/summary.json. No guest writes.
 It is not Apple code-signing compatibility, a general CMS/AMFI implementation,
 launchd/system services, iOS or any physical UMS512 support. The physical phone
 remains strictly prohibited.

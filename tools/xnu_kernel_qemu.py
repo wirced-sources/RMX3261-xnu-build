@@ -253,7 +253,7 @@ class RSP:
         data = bytes.fromhex(self.command('g'))
         if len(data) < 33*8:
             raise ValueError('short AArch64 register set')
-        indices = [(f'x{i}',i) for i in range(7)] + [('x12',12),('x16',16),('lr',30),('sp',31),('pc',32)]
+        indices = [(f'x{i}',i) for i in (*range(7),12,16,*range(19,29))] + [('lr',30),('sp',31),('pc',32)]
         result = {name: hex(struct.unpack_from('<Q', data, i*8)[0]) for name,i in indices}
         if len(data) >= 268:
             result['cpsr'] = hex(struct.unpack_from('<I',data,264)[0])
@@ -355,7 +355,7 @@ def inspect_mapping(rsp, address, system):
             if level == 3 or value & 3 == 1:
                 result.update(valid=True,pa=hex((value & 0x0000ffffffffc000 & -(1<<shift)) | (address & ((1<<shift)-1))),
                     access_flag=bool(value & (1<<10)),read_only=bool(value & (1<<7)),
-                    privileged_execute_never=bool(value & (1<<53)))
+                    privileged_execute_never=bool(value & (1<<53)),unprivileged_execute_never=bool(value & (1<<54)))
                 break
             table = value & 0x0000ffffffffc000
     finally:
@@ -413,7 +413,7 @@ def virtual_cpu_binding(tree):
     return dict(count=1,physical_id=0,path=cpu.path)
 
 
-def execute(kernel, record, out, qemu, clang):
+def execute(kernel, record, out, qemu, clang, userspace_manifest=None):
     data = kernel.read_bytes()
     report = audit(data, zero_slide_local_relocations=True)
     proof = json.loads(record.read_text())
@@ -422,6 +422,10 @@ def execute(kernel, record, out, qemu, clang):
             or proof.get('diagnostic_observer_included') is not False):
         raise ValueError('fresh genuine native-build provenance is required')
     sym = symbols(data)
+    lifecycle=None
+    if userspace_manifest:
+        from user_lifecycle import UserLifecycle
+        lifecycle=UserLifecycle(json.loads(Path(userspace_manifest).read_text()))
     for name in ('_arm_init', '_arm_vm_init', '_kernel_bootstrap', '_panic'):
         if name not in sym:
             raise ValueError('genuine kernel symbol missing: ' + name)
@@ -505,13 +509,15 @@ def execute(kernel, record, out, qemu, clang):
         '-gdb',f'tcp:127.0.0.1:{port}','-kernel',str(image),'-device',f'loader,file={out / "kernel.physical.bin"},addr={header_pa:#x},force-raw=on'],stdout=log,stderr=log)
     result = {'kernel_sha256':report['sha256'],'arm_init_executed':False,
               'kernel_boot_completed':False,'hardware_verified':False,'stops':[],
-              'observation_window_seconds':180 if '_ums512_lab_exec_proof' in sym else (90 if '_ums512_storage_proof' in sym else 45),'boundary_limit':256,
+              'observation_window_seconds':240 if lifecycle else (180 if '_ums512_lab_exec_proof' in sym else (90 if '_ums512_storage_proof' in sym else 45)),'boundary_limit':512 if lifecycle else 256,
               'boot_arguments':command_line.decode('ascii'),
               'virtual_timer_fdt_binding':timer_binding,'virtual_cpu_fdt_binding':cpu_binding,
               'virtual_uart_fdt_binding':uart,
               'virtual_rtc_fdt_binding':rtc,
               'kernel_runtime_tests_requested':runtime_requested,
               'returned_init_functions':[]}
+    if lifecycle:
+        result['userspace_lifecycle']=lifecycle.proof
     try:
         deadline = time.monotonic()+10
         while True:
@@ -587,13 +593,16 @@ def execute(kernel, record, out, qemu, clang):
                      '__ZN15RMXQemuPlatform5startEP9IOService',
                      '__ZN15RMXQemuPlatform9configureEP9IOService',
                      '_kmem_crypto_init','_Assert','_panic')
+            if lifecycle:
+                names=tuple(n for n in names if n!='_machine_thread_set_state')+('_fork','_execve','_wait4','_exit')
             boundaries = {sym[n]:n for n in names if n in sym}
+            if lifecycle:boundaries.update(lifecycle.boundaries)
             return_sp={}
             for address in boundaries:
                 if rsp.command(f'Z1,{address:x},4') != 'OK':
                     raise RuntimeError('QEMU init-boundary breakpoint unavailable')
             deadline = time.monotonic()+result['observation_window_seconds']
-            for _ in range(256):
+            for _ in range(result['boundary_limit']):
                 remaining = deadline-time.monotonic()
                 if remaining <= 0:
                     result['bounded_run_timeout'] = True
@@ -614,6 +623,21 @@ def execute(kernel, record, out, qemu, clang):
                     boundaries.pop(int(regs['pc'],16),None)
                     continue
                 result['stops'].append({'boundary':name,**control_registers(regs)})
+                if lifecycle and name.startswith('user:'):
+                    label=name[5:]
+                    done=lifecycle.observe(label,rsp,regs,inspect_mapping)
+                    if not label.startswith('entry_'):rsp.command(f'z1,{int(regs["pc"],16):x},4')
+                    if label=='entry_init':result['user_el0_execution_verified']=True
+                    if label=='init_pid':result['syscall_roundtrip_verified']=True
+                    if done:
+                        result['user_program_completed']=True
+                        break
+                    continue
+                if lifecycle and name in ('_fork','_execve','_wait4','_exit'):
+                    lifecycle.proof.setdefault('kernel_entries',[]).append(dict(function=name,**control_registers(regs)))
+                    rsp.command(f'z1,{int(regs["pc"],16):x},4');rsp.command('s')
+                    if rsp.command(f'Z1,{sym[name]:x},4')!='OK':raise RuntimeError('lifecycle syscall entry rearm failed')
+                    continue
                 if name=='_machine_thread_set_state':
                     flavor,count=int(regs['x1'],16)&0xffffffff,int(regs['x3'],16)&0xffffffff
                     pointer=int(regs['x2'],16)
@@ -657,11 +681,16 @@ def execute(kernel, record, out, qemu, clang):
                 if name=='_cs_validate_page':
                     result['observed_page_validation_offset']=int(regs['x2'],16)
                     page_outputs=[int(regs[k],16) for k in ('x4','x5','x6')]
+                    page_vnode=regs['x0']
                 if name=='return:_cs_validate_page':
                     values=[int.from_bytes(bytes.fromhex(rsp.command(f'm{a:x},4')),'little') for a in page_outputs]
                     result['native_code_page_validation']=dict(zip(('validated','tainted','nx'),values))
+                    if lifecycle:result.setdefault('native_code_page_validations',[]).append(dict(vnode=page_vnode,
+                        offset=result['observed_page_validation_offset'],**result['native_code_page_validation']))
+                if name=='_ubc_cs_blob_add':attachment_vnode=regs['x0']
                 if name=='return:_ubc_cs_blob_add':
                     result.setdefault('native_signature_attachment_returns',[]).append(int(regs['x0'],16)&0xffffffff)
+                    if lifecycle:result.setdefault('native_attachment_vnodes',[]).append(attachment_vnode)
                 if name=='return:_getpid': result['genuine_getpid_handler_returned']=True
                 if '_ums512_lab_exec_proof' in sym and name=='return:_getpid':
                     raw=read_kernel_memory_el1(rsp,regs,sym['_ums512_lab_exec_proof'],64)
@@ -881,6 +910,9 @@ def execute(kernel, record, out, qemu, clang):
                         address=sym['_ums512_qemu_hfs_root_auth']
                         if rsp.command(f'Z1,{address:x},4')!='OK':
                             raise RuntimeError('root-auth observation breakpoint unavailable')
+                    if lifecycle and name in ('return:_getpid','return:_ubc_cs_blob_add','return:_cs_validate_page','return:_load_machfile'):
+                        address=sym[name[7:]]
+                        if rsp.command(f'Z1,{address:x},4')!='OK':raise RuntimeError('native multi-process observation rearm failed')
                 elif name not in ('_kernel_bootstrap','_kernel_bootstrap_thread'):
                     # A function entry does not prove initialization completed.
                     # Observe its real caller return address without changing LR.
@@ -930,13 +962,22 @@ def execute(kernel, record, out, qemu, clang):
                         raise RuntimeError('genuine signed Mach-O/EL0/syscall roundtrip did not complete')
                     if result.get('exec_counters_sample',{}).get('boundary')!='return:_getpid':
                         raise RuntimeError('fresh post-exec EL1 counters were not observed')
-                    if result.get('native_signature_attachment_returns')!=[0]:
+                    if result.get('native_signature_attachment_returns')!=([0,0] if lifecycle else [0]):
                         raise RuntimeError('native signature attachment did not return success')
-                    if lab.get('exec_allowed')!=1 or lab.get('signature_allowed',0)<1 or lab.get('files_verified',0)<2 or lab.get('vnode_negative_tests')!=4 or lab.get('denials')!=4:
+                    if lab.get('exec_allowed')!=(2 if lifecycle else 1) or lab.get('signature_allowed',0)<(2 if lifecycle else 1) or lab.get('files_verified',0)<(6 if lifecycle else 2) or lab.get('vnode_negative_tests')!=4 or lab.get('denials')!=(6 if lifecycle else 4):
                         raise RuntimeError('real CMS/CD signature attachment or untrusted vnode rejection not confirmed')
                     page=result.get('native_code_page_validation',{})
                     if not page.get('validated') or page.get('tainted') or page.get('nx'):
                         raise RuntimeError('native executable-page validation not observed')
+                    if lifecycle:
+                        lifecycle.validate()
+                        if not lifecycle.proof.get('complete'):raise RuntimeError('owned process lifecycle not completed')
+                        entries={e['function'] for e in lifecycle.proof.get('kernel_entries',[])}
+                        if not {'_fork','_execve','_wait4','_exit'}<=entries:raise RuntimeError('native lifecycle syscall handlers not observed')
+                        vnodes=set(result.get('native_attachment_vnodes',[]))
+                        pages=result.get('native_code_page_validations',[])
+                        if len(vnodes)!=2 or not vnodes<={p['vnode'] for p in pages if p['validated'] and not p['tainted'] and not p['nx']}:
+                            raise RuntimeError('each independent signed image needs native attachment and executable-page validation')
                     if result.get('panic_reached'): raise RuntimeError('unexpected panic in signed user execution profile')
                 elif result.get('panic_format_from_audited_kernel'):
                     failure=result.get('first_process_exec_failure',{})
@@ -1007,7 +1048,8 @@ if __name__ == '__main__':
     p.add_argument('--out',type=Path,required=True)
     p.add_argument('--qemu',default=shutil.which('qemu-system-aarch64'))
     p.add_argument('--clang',default=shutil.which('clang'))
+    p.add_argument('--userspace-manifest',type=Path)
     a=p.parse_args()
     if not a.qemu or not a.clang:
         p.error('real QEMU and Mach-O capable Clang are required')
-    execute(a.kernel.resolve(),a.record,a.out.resolve(),a.qemu,a.clang)
+    execute(a.kernel.resolve(),a.record,a.out.resolve(),a.qemu,a.clang,a.userspace_manifest)

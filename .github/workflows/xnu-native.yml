@@ -42,7 +42,7 @@ jobs:
             "$QEMU_BIN" --version
             XNU_BOOT_STATUS=0
             for XNU_BOOT_TRIAL in 1 2; do
-              python3 tools/xnu_kernel_qemu.py out/native/report/kernel.development.ums512.macho --record out/native/report/kernel-audit.json --out "out/native/kernel-qemu-$XNU_BOOT_TRIAL" --qemu "$QEMU_BIN" --clang "$(xcrun --find clang)" 2>&1 || XNU_BOOT_STATUS=1
+              python3 tools/xnu_kernel_qemu.py out/native/report/kernel.development.ums512.macho --record out/native/report/kernel-audit.json --userspace-manifest out/native/report/userspace.json --out "out/native/kernel-qemu-$XNU_BOOT_TRIAL" --qemu "$QEMU_BIN" --clang "$(xcrun --find clang)" 2>&1 || XNU_BOOT_STATUS=1
             done
             exit "$XNU_BOOT_STATUS"
           else

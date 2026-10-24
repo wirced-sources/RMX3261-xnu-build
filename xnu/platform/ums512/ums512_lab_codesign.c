@@ -121,13 +121,15 @@ static int cms(Span content,Span encoded,uint64_t now)
 }
 static int directory(Span cd,uint8_t digest[32],uint32_t *limit,uint32_t *offset,uint32_t *slots)
 {
-    static const char ident[]="org.rmx.qemu.init";
+    static const char init[]="org.rmx.qemu.init",child[]="org.rmx.qemu.child";
     if(cd.n<48 || be32(cd.p)!=0xfade0c02 || be32(cd.p+4)!=cd.n || be32(cd.p+8)!=0x20100 ||
        be32(cd.p+12)!=0x300 || be32(cd.p+20)!=48 || be32(cd.p+24) ||
        cd.p[36]!=32 || cd.p[37]!=2 || cd.p[38] || cd.p[39]!=14 || be32(cd.p+40) || be32(cd.p+44)) return 0;
     *offset=be32(cd.p+16);*slots=be32(cd.p+28);*limit=be32(cd.p+32);
-    if(*offset!=48+sizeof(ident) || *offset>cd.n || !*limit || *limit>128*1024 ||
-       *slots!=(*limit+16383)/16384 || cd.n-*offset!=(size_t)*slots*32 || memcmp(cd.p+48,ident,sizeof(ident))) return 0;
+    if(*offset>cd.n || !*limit || *limit>128*1024 ||
+       *slots!=(*limit+16383)/16384 || cd.n-*offset!=(size_t)*slots*32) return 0;
+    if(!((*offset==48+sizeof(init) && !memcmp(cd.p+48,init,sizeof(init))) ||
+         (*offset==48+sizeof(child) && !memcmp(cd.p+48,child,sizeof(child))))) return 0;
     hash(cd.p,cd.n,digest);return 1;
 }
 static int superblob(Span sb,uint64_t now,Span *cd,uint8_t digest[32],uint32_t *limit,uint32_t *offset,uint32_t *slots)
