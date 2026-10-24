@@ -45,6 +45,20 @@ void ums512_hw_clock_identify(boot_args *args)
     uint64_t cntfrq=__builtin_arm_rsr64("CNTFRQ_EL0");
     if (ums512_hw_clock_check(&h,cntfrq,&r))
         panic("UMS512HW: missing/inconsistent clock observations");
+    /* A plausible CNTFRQ is not proof of a live counter. Check forward
+     * progress without relying on an as-yet uninitialized XNU timebase.
+     * This detects stopped/backwards time, not external oscillator accuracy.
+     */
+    __asm__ volatile("isb":::"memory");
+    uint64_t first=__builtin_arm_rsr64("CNTVCT_EL0"),now=first;
+    unsigned budget=1000000;
+    while (now==first && budget) {
+        --budget;
+        __asm__ volatile("isb":::"memory");
+        now=__builtin_arm_rsr64("CNTVCT_EL0");
+    }
+    if (now<=first || __builtin_arm_rsr64("CNTFRQ_EL0")!=cntfrq)
+        panic("UMS512HW: counter stopped/backwards or frequency changed");
     /* Also require the running CPU's ordinary Apple ADT timebase value to
      * agree. This catches disagreement between the adapter and handoff data.
      */

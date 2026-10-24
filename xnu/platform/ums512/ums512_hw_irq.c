@@ -113,7 +113,12 @@ void ums512_hw_irq_initialize(void)
      */
     if (!(__builtin_arm_rsr64("ICC_SRE_EL1")&1) ||
         (__builtin_arm_rsr64("CNTV_CTL_EL0")&1) ||
+        /* Stock fiq_context_init subsequently masks CNTP_CTL_EL0. Refuse a
+         * foreign/enabled physical NS timer, do not silently seize it.
+         */
+        (__builtin_arm_rsr64("CNTP_CTL_EL0")&1) ||
         (__builtin_arm_rsr64("ICC_IGRPEN1_EL1")&1) ||
+        __builtin_arm_rsr64("ICC_RPR_EL1")!=0xff ||
         (__builtin_arm_rsr64("ICC_CTLR_EL1")&1))
         panic("UMS512HW: SRE/timer/CPU interface not handed off quiescent");
     vm_offset_t dist=ml_io_map(h.gicd_base,h.gicd_size);
