@@ -13,7 +13,7 @@ import subprocess
 ROOT=Path(__file__).resolve().parents[1]
 
 
-def audit(data):
+def audit(data,trap=True):
     if not 32<=len(data)<=256*1024:
         raise ValueError('unsigned test executable size outside profile')
     magic,cpu,sub,kind,count,size,_,reserved=struct.unpack_from('<8I',data)
@@ -49,24 +49,28 @@ def audit(data):
     if not owner or entry%4:
         raise ValueError('test entry outside executable file-backed bytes')
     offset=owner[1]+entry-owner[0]
-    if struct.unpack_from('<I',data,offset)[0]!=0xd420a2a0:
-        raise ValueError('test entry must be BRK #0x515')
+    expected=0xd420a2a0 if trap else 0xd2800290
+    if struct.unpack_from('<I',data,offset)[0]!=expected:
+        raise ValueError('test entry must match the owned trap/getpid program')
     return dict(bytes=len(data),sha256=hashlib.sha256(data).hexdigest(),architecture='ARM64',
-                entry=hex(entry),unsigned=True,apple_userland=False,entry_is_trap=True)
+                entry=hex(entry),unsigned=True,apple_userland=False,entry_is_trap=trap)
 
 
-def build(work,staging,clang,ld):
+def build(work,staging,clang,ld,name='launchd',user=False):
     work,staging=Path(work).resolve(),Path(staging).resolve()
     for path in (work,staging):
         path.relative_to((ROOT/'out').resolve())
-    directory=work/'unsigned-init-fixture'
+    if name not in ('launchd','unsigned-init'): raise ValueError('unknown owned fixture name')
+    directory=work/(name+'-fixture')
     directory.mkdir()
     source,obj=directory/'init.s',directory/'init.o'
-    target=staging/'sbin/launchd'
+    target=staging/'sbin'/name
     if target.exists() or target.is_symlink():
         raise ValueError('refusing to overwrite executable fixture')
+    body=(' mov x16,#20\n svc #0x80\n cmp x0,#1\n b.ne fail\n mov x0,#0x515\ndone:\n b done\n'+
+          'fail:\n brk #0x516\n b fail\n') if user else ' brk #0x515\n b _start\n'
     source.write_text('.section __TEXT,__text,regular,pure_instructions\n.p2align 2\n'+
-                      '.globl _start\n_start:\n brk #0x515\n b _start\n',encoding='utf-8',newline='\n')
+                      '.globl _start\n_start:\n'+body,encoding='utf-8',newline='\n')
     commands=([clang,'-target','arm64-apple-macos11','-c',str(source),'-o',str(obj)],
               [ld,'-arch','arm64','-static','-e','_start','-platform_version','macos','11.0','14.5',
                '-no_adhoc_codesign','-no_uuid','-o',str(target),str(obj)])
@@ -74,7 +78,7 @@ def build(work,staging,clang,ld):
         result=subprocess.run(command,capture_output=True,text=True,timeout=60)
         if result.returncode:
             raise RuntimeError('owned unsigned init build failed: '+(result.stdout+result.stderr)[-4000:])
-    proof=audit(target.read_bytes())
+    proof=audit(target.read_bytes(),trap=not user)
     target.chmod(0o755)
     (directory/'audit.json').write_text(json.dumps(proof,indent=2)+'\n',encoding='utf-8',newline='\n')
     return proof

@@ -356,8 +356,10 @@ def image(xnu,clang,ld):
     (staging/'dev').mkdir()
     (staging/'sbin').mkdir()
     (staging/'root-proof.txt').write_text('Owned QEMU laboratory data; no Apple userland.\n')
-    from qemu_user_fixture import build as build_unsigned_init
-    executable=build_unsigned_init(target,staging,clang,ld)
+    from lab_exec_assets import sign,check
+    executable=sign(target,staging,clang,ld)
+    shutil.copyfile(target/'lab-signing/lab_exec_trust.h',xnu/'libkern/ums512/lab_exec_trust.h')
+    check(xnu/'libkern/ums512',xnu/'libkern/ums512',staging/'sbin/launchd',clang,sanitize=True)
     dmg, raw = target/'root.dmg', target/'root.cdr'
     if dmg.exists() or raw.exists():
         raise ValueError('refusing to overwrite a root image')
@@ -381,6 +383,6 @@ def image(xnu,clang,ld):
         '.globl _ums512_root_image, _ums512_root_image_end\n_ums512_root_image:\n.incbin "'+str(disk)+'"\n'+
         '_ums512_root_image_end:\n', newline='\n')
     return {'bytes':len(data), 'sha256':sha.hex(), 'format':'HFS+',
-            'content':'owned marker and unsigned trap-only /sbin/launchd for mandatory exec-denial test',
+            'content':'owned CMS-signed ARM64 getpid init plus unsigned/altered/CMS-negative assets',
             'executable_fixture':executable,
             'geometry':geometry, 'embedded_in_kernel':True, 'readonly':True, 'apple_trust':False}

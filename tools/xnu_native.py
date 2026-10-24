@@ -69,6 +69,8 @@ CAPSULE = (
     "tools/xnu_storage.py", "xnu/platform/ums512/QemuRootStorage.cpp",
     "xnu/platform/ums512/ums512_hfs_keys.h", "xnu/platform/ums512/ums512_hfs_keys.inc",
     "tests/test_root_image.py", "tools/qemu_user_fixture.py", "tests/test_user_fixture.py",
+    "tools/lab_exec_assets.py", "xnu/platform/ums512/ums512_lab_codesign.h",
+    "xnu/platform/ums512/ums512_lab_codesign.c", "xnu/platform/ums512/ums512_lab_vnode.c",
     "xnu/platform/ums512/ums512_rootfs_test.c",
     "tools/xnu_pthread.py", "xnu/platform/ums512/ums512_pthread.c",
     "tools/crypto_check.py", "tests/crypto_rng_kat.c",
@@ -197,6 +199,10 @@ def prepare(work):
     install_storage(source('IOStorageFamily'),source('hfs'),src)
     from xnu_crypto import install as install_crypto
     install_crypto(src)
+    for name in ('ums512_lab_codesign.c','ums512_lab_codesign.h'):
+        shutil.copyfile(ROOT/'xnu/platform/ums512'/name,src/'libkern/ums512'/name)
+    with (src/'libkern/conf/files').open('a',newline='\n') as stream:
+        stream.write('\nlibkern/ums512/ums512_lab_codesign.c\toptional ums512\n')
     from image4_vendor import install as install_image4,CFILES
     install_image4(src/'libkern/ums512_img4')
     shutil.copyfile(ROOT/'tests/security_abi.c',src/'libkern/ums512_img4/security_abi.c')
@@ -218,10 +224,13 @@ def prepare(work):
     shutil.copyfile(ROOT/'xnu/platform/ums512/ums512_security.c',src/'bsd/ums512/ums512_security.c')
     shutil.copyfile(ROOT/'xnu/platform/ums512/ums512_socket_test.c',src/'bsd/ums512/ums512_socket_test.c')
     shutil.copyfile(ROOT/'xnu/platform/ums512/ums512_rootfs_test.c',src/'bsd/ums512/ums512_rootfs_test.c')
+    shutil.copyfile(ROOT/'xnu/platform/ums512/ums512_lab_vnode.c',src/'bsd/ums512/ums512_lab_vnode.c')
+    shutil.copyfile(ROOT/'xnu/platform/ums512/ums512_lab_codesign.h',src/'bsd/ums512/ums512_lab_codesign.h')
     with (src/'bsd/conf/files').open('a',newline='\n') as config_stream:
         config_stream.write('\nbsd/ums512/ums512_security.c\toptional ums512\n')
         config_stream.write('\nbsd/ums512/ums512_socket_test.c\toptional ums512\n')
         config_stream.write('\nbsd/ums512/ums512_rootfs_test.c\toptional ums512\n')
+        config_stream.write('\nbsd/ums512/ums512_lab_vnode.c\toptional ums512\n')
     (src / "osfmk/ums512").mkdir()
     shutil.copyfile(ROOT / "xnu/platform/ums512/cpu_entry.h", src / "osfmk/ums512/cpu_entry.h")
     shutil.copyfile(ROOT / 'xnu/platform/ums512/ums512_runtime.c',src / 'osfmk/ums512/ums512_runtime.c')

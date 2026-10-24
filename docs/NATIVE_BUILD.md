@@ -542,3 +542,17 @@ file-backed trap entry and absent signature/dyld imports. Real init exec must
 reach mandatory MAC quarantine and fail EAUTH80; direct early callback selftests
 cannot satisfy the new counters. All security checks and execution quarantine
 remain unchanged. No Apple binary/key or external disk input is used.
+
+Native53/run39963215637/job120446257979 passed full original make install,
+strict audit and both actual boots. Full kernel37499904B,18segments,
+76488local relocations,0imports; SHAddbb2a57d15826b110702542c50f616edbd83cad3c61a7f47c425b7f4af68d44.
+Real arm_init0xfffffe0008c53980 executed. Both boots again mounted/authenticated
+HFS root, passed vnode/block/VM/IPC/security/IRQ/thread/RTC/socket tests and
+returned from devfs_kernel_mount, bsd_utaskbootstrap and bsd_init. Existing
+owned unsigned /sbin/launchd reached actual PID1 MAC exec callback exactly
+once and was denied EAUTH80; stock init-failure panic remains intact.
+No positive Mach-O user activation, code-page validation or EL0 execution.
+Current exact audit/two traces are retained in history/native53; native52's
+two genuine HFS mount/ENOENT traces are preserved separately. Different image
+formatting metadata means these are two successful root builds, not bit-identical
+kernel reproduction. Local97unit+8M0QEMU PASS; current/historical physmap controls PASS.

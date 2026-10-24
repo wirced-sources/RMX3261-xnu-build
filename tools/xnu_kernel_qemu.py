@@ -569,6 +569,7 @@ def execute(kernel, record, out, qemu, clang):
                      '_ums512_qemu_hfs_root_auth','_devfs_kernel_mount',
                      '_ums512_qemu_rootfs_selftest',
                      '_bsd_utaskbootstrap','_bsd_ast','_load_init_program','_exec_activate_image',
+                     '_load_machfile','_machine_thread_set_state','_cs_validate_page','_getpid',
                      '_ums512_pthread_register','_ums512_pthread_start','_pthread_kext_register',
                      '_pthread_init','__pthread_init',
                      '__ZN15RMXQemuPlatform5startEP9IOService',
@@ -601,6 +602,62 @@ def execute(kernel, record, out, qemu, clang):
                     boundaries.pop(int(regs['pc'],16),None)
                     continue
                 result['stops'].append({'boundary':name,**control_registers(regs)})
+                if name=='_machine_thread_set_state':
+                    flavor,count=int(regs['x1'],16)&0xffffffff,int(regs['x3'],16)&0xffffffff
+                    pointer=int(regs['x2'],16)
+                    if (flavor,count) in ((6,68),(1,70)):
+                        state=bytes.fromhex(rsp.command(f'm{pointer:x},{count*4:x}'))
+                        if flavor==1:
+                            if struct.unpack_from('<II',state)!=(6,68): state=b''
+                            else: state=state[8:]
+                        if state:
+                            user_sp,user_pc=struct.unpack_from('<QQ',state,248)
+                            if 0x4000<=user_pc<0x800000000000 and user_pc%4==0:
+                                result['proposed_user_entry']=dict(pc=hex(user_pc),sp=hex(user_sp),source='real ARM_THREAD_STATE64 setter')
+                                for delta,label in ((0,'__user_entry'),(8,'__user_after_syscall'),(20,'__user_done')):
+                                    address=user_pc+delta
+                                    if address not in boundaries:
+                                        if rsp.command(f'Z1,{address:x},4')!='OK': raise RuntimeError('user observation breakpoint unavailable')
+                                        boundaries[address]=label
+                    # Preserve the real setter breakpoint until init's state is
+                    # installed; single-step original code, never write registers.
+                    rsp.command(f'z1,{int(regs["pc"],16):x},4');rsp.command('s')
+                    if rsp.command(f'Z1,{sym[name]:x},4')!='OK': raise RuntimeError('state setter rearm failed')
+                    continue
+                if name=='__user_entry':
+                    pc=int(regs['pc'],16)
+                    actual=bytes.fromhex(rsp.command(f'm{pc:x},8'))
+                    if int(regs['cpsr'],16)&15 or actual!=struct.pack('<II',0xd2800290,0xd4001001):
+                        raise RuntimeError('actual user entry is not EL0 owned getpid code')
+                    rsp.command(f'z1,{pc:x},4');rsp.command('s');after=rsp.registers()
+                    if int(after['pc'],16)!=pc+4 or int(after['x16'],16)!=20 or int(after['cpsr'],16)&15:
+                        raise RuntimeError('first genuine EL0 instruction did not execute')
+                    result['user_el0_execution_verified']=True
+                    result['first_user_instruction']=dict(pc=hex(pc),instruction='mov x16,#20',after_pc=after['pc'],x16=20,cpsr=after['cpsr'])
+                    continue
+                if name=='__user_after_syscall':
+                    if int(regs['cpsr'],16)&15 or int(regs['x0'],16)!=1 or int(regs['cpsr'],16)&0x20000000:
+                        raise RuntimeError('real getpid syscall did not return PID1 successfully to EL0')
+                    result['syscall_roundtrip_verified']=True
+                    result['syscall_return']=dict(pc=regs['pc'],cpsr=regs['cpsr'],pid=1,syscall=20)
+                    rsp.command(f'z1,{int(regs["pc"],16):x},4')
+                    continue
+                if name=='_cs_validate_page':
+                    result['observed_page_validation_offset']=int(regs['x2'],16)
+                    page_outputs=[int(regs[k],16) for k in ('x4','x5','x6')]
+                if name=='return:_cs_validate_page':
+                    values=[int.from_bytes(bytes.fromhex(rsp.command(f'm{a:x},4')),'little') for a in page_outputs]
+                    result['native_code_page_validation']=dict(zip(('validated','tainted','nx'),values))
+                if name=='return:_getpid': result['genuine_getpid_handler_returned']=True
+                if '_ums512_lab_exec_proof' in sym and name in ('_panic','__user_done','return:_exec_activate_image'):
+                    raw=bytes.fromhex(rsp.command(f'm{sym["_ums512_lab_exec_proof"]:x},40'))
+                    result['lab_exec_runtime']=dict(zip(('exec_allowed','signature_allowed','files_verified','denials',
+                        'vnode_negative_tests','reserved0','reserved1','reserved2'),struct.unpack('<8Q',raw)))
+                if name=='__user_done':
+                    if int(regs['cpsr'],16)&15 or int(regs['x0'],16)!=0x515:
+                        raise RuntimeError('EL0 did not verify syscall result and reach its success marker')
+                    result['user_program_completed']=True
+                    break
                 if name.startswith('return:'):
                     result['returned_init_functions'].append(name[7:])
                 if name=='_ums512_qemu_hfs_root_auth':
@@ -842,7 +899,18 @@ def execute(kernel, record, out, qemu, clang):
                 if not result.get('rootfs_mounted') or not result.get('rootfs_vnode_runtime',{}).get('complete') or not storage.get('root_auth_ok'):
                     raise RuntimeError('genuine authenticated HFS root mount/vnode operations did not complete')
                 result['rootfs_runtime_tests_passed']=True
-                if result.get('panic_format_from_audited_kernel'):
+                if '_ums512_lab_exec_proof' in sym:
+                    lab=result.get('lab_exec_runtime',{})
+                    if not all(result.get(k) for k in ('user_el0_execution_verified','syscall_roundtrip_verified',
+                               'genuine_getpid_handler_returned','user_program_completed')):
+                        raise RuntimeError('genuine signed Mach-O/EL0/syscall roundtrip did not complete')
+                    if lab.get('exec_allowed')!=1 or lab.get('signature_allowed',0)<1 or lab.get('files_verified',0)<2 or lab.get('vnode_negative_tests')!=3:
+                        raise RuntimeError('real CMS/CD signature attachment or untrusted vnode rejection not confirmed')
+                    page=result.get('native_code_page_validation',{})
+                    if not page.get('validated') or page.get('tainted') or page.get('nx'):
+                        raise RuntimeError('native executable-page validation not observed')
+                    if result.get('panic_reached'): raise RuntimeError('unexpected panic in signed user execution profile')
+                elif result.get('panic_format_from_audited_kernel'):
                     failure=result.get('first_process_exec_failure',{})
                     if '_ums512_exec_denial_proof' in sym:
                         result['expected_unsigned_init_denial']=(failure.get('path')=='/sbin/launchd' and

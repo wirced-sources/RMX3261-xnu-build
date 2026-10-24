@@ -15,6 +15,7 @@
 #include <sys/vnode_if.h>
 #include <sys/uio.h>
 #include <pexpert/pexpert.h>
+#include "ums512_lab_codesign.h"
 
 struct ums512_rootfs_proof {
     uint64_t magic,complete,reads,bytes;
@@ -70,5 +71,6 @@ void ums512_qemu_rootfs_selftest(void)
         panic("QEMU rootfs: nonexistent file lookup mismatch");
     }
     ums512_rootfs_proof.missing_denials++;
+    ums512_lab_vnode_negative_tests();
     ums512_rootfs_proof.complete=1;
 }

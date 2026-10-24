@@ -26,6 +26,7 @@ struct timespec;
 #include <pexpert/device_tree.h>
 #include "ums512_img4.h"
 #include "ums512_security.h"
+#include "ums512_lab_codesign.h"
 #if CODE_SIGNING_MONITOR || PMAP_CS_PPL_MONITOR
 #error Laboratory provider requires the explicit non-monitor QEMU profile
 #endif
@@ -60,14 +61,23 @@ static int deny_exec(kauth_cred_t cred,struct vnode *vp,struct vnode *script __u
         os_atomic_inc(&ums512_exec_denial_proof.callbacks,relaxed);
         if (vnode_isreg(vp)) { os_atomic_inc(&ums512_exec_denial_proof.regular_files,relaxed); }
         if (proc_pid(current_proc())==1) { os_atomic_inc(&ums512_exec_denial_proof.init_process,relaxed); }
+        int result=ums512_lab_authorize_vnode(vp,NULL);
+        if(!result) { os_atomic_inc(&ums512_lab_exec_proof.exec_allowed,relaxed);return 0; }
         os_atomic_inc(&ums512_exec_denial_proof.denied,relaxed);
     }
     return EAUTH;
 }
-static int deny_signature(struct vnode *vp __unused,struct label *label __unused,cpu_type_t cpu __unused,
-    struct cs_blob *blob __unused,unsigned *flags __unused,unsigned *signer __unused,
+static int deny_signature(struct vnode *vp,struct label *label __unused,cpu_type_t cpu __unused,
+    struct cs_blob *blob,unsigned *flags,unsigned *signer,
     int mode __unused,unsigned platform __unused,char **desc __unused,size_t *length __unused)
-{ return EAUTH; }
+{
+    if(!vp || !blob || !flags || !signer || (*flags & ~(CS_VALID|CS_HARD|CS_KILL|CS_SIGNED)) ||
+       ums512_lab_authorize_vnode(vp,blob)) return EAUTH;
+    *flags|=CS_VALID|CS_HARD|CS_KILL|CS_SIGNED;
+    *signer=CS_SIGNER_TYPE_UNKNOWN;
+    os_atomic_inc(&ums512_lab_exec_proof.signature_allowed,relaxed);
+    return 0;
+}
 static int deny_supplement(struct vnode *vp __unused,struct label *label __unused,struct cs_blob *blob __unused,
     struct vnode *linked __unused,struct cs_blob *lb __unused,unsigned *signer __unused)
 { return EAUTH; }
