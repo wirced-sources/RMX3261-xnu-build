@@ -109,6 +109,7 @@ authorityKeyIdentifier=keyid,issuer
             bad=bytearray((staging/"sbin"/base).read_bytes());bad[offset]^=1
             (staging/"sbin"/name).write_bytes(bad);(staging/"sbin"/name).chmod(0o755)
         shutil.copyfile(staging/"sbin/unsigned-init",staging/"sbin/unsigned-child")
+        (staging/'sbin/unsigned-child').chmod(0o755)
         result.update(leaf_sha256=hashlib.sha256(leaf_der).hexdigest(),root_sha256=hashlib.sha256(root_der).hexdigest(),
             laboratory_only=True,private_keys_exported=False,apple_userland=False,
             syscall="Darwin ARM64 fork/execve/exit/wait4, fd IO, pipe, mmap/munmap",
