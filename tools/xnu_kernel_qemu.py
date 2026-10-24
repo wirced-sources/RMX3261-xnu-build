@@ -166,6 +166,12 @@ Lentry:
  isb
  eret
 Lel1:
+ mrs x10, ID_AA64MMFR1_EL1
+ ubfx x10, x10, #20, #4
+ cmp x10, #1
+ b.lo Lpark
+ cmp x10, #3
+ b.hi Lpark
 ''' + literal('x11', freq) + '''
  mrs x10, CNTFRQ_EL0
  str w10, [x11]
@@ -288,7 +294,8 @@ class RSP:
                     number = int(child.attrib.get('regnum',nextnum))
                     nextnum = number+1
                     key = child.attrib['name'].upper()
-                    if key in ('TTBR0_EL1','TTBR1_EL1','TCR_EL1','SCTLR_EL1','MAIR_EL1'):
+                    if key in ('TTBR0_EL1','TTBR1_EL1','TCR_EL1','SCTLR_EL1','MAIR_EL1',
+                               'ESR_EL1','FAR_EL1','ELR_EL1','SPSR_EL1','ID_AA64MMFR1_EL1','CNTVCT_EL0','CNTPCT_EL0'):
                         value = bytes.fromhex(self.command(f'p{number:x}'))
                         if len(value) != 8:
                             raise ValueError('short QEMU system register')
@@ -431,7 +438,8 @@ def execute(kernel, record, out, qemu, clang, userspace_manifest=None):
             raise ValueError('genuine kernel symbol missing: ' + name)
     out.mkdir(parents=True, exist_ok=False)
     machine = 'virt,gic-version=3,virtualization=on'
-    base_cmd = [qemu, '-machine', machine, '-cpu', 'cortex-a55', '-smp', '1', '-m', '512M', '-nic', 'none']
+    base_cmd = [qemu, '-machine', machine, '-cpu', 'cortex-a55', '-smp', '1', '-m', '512M', '-nic', 'none',
+                '-accel','tcg,thread=single','-icount','shift=3,align=off,sleep=off','-rtc','base=utc,clock=vm']
     fdt_path = out/'qemu.dtb'
     subprocess.run([*base_cmd, '-machine', machine+',dumpdtb='+str(fdt_path), '-display','none'], check=True, capture_output=True, timeout=20)
     tree = FDT(fdt_path.read_bytes())
@@ -516,6 +524,7 @@ def execute(kernel, record, out, qemu, clang, userspace_manifest=None):
               'virtual_rtc_fdt_binding':rtc,
               'kernel_runtime_tests_requested':runtime_requested,
               'returned_init_functions':[]}
+    result['virtual_time_model']='TCG icount shift3, sleep=off, RTC clock=vm; stock guest watchdogs unchanged'
     if lifecycle:
         result['userspace_lifecycle']=lifecycle.proof
     try:
@@ -542,6 +551,10 @@ def execute(kernel, record, out, qemu, clang, userspace_manifest=None):
                 result['stops'].append({'boundary':'timeout before arm_init',**control_registers(rsp.registers())})
                 raise RuntimeError('bounded run stopped before genuine arm_init; inspect recorded PC/SP/x0')
             before = rsp.registers()
+            capabilities=rsp.system_registers()
+            pan=(int(capabilities['ID_AA64MMFR1_EL1'],16)>>20)&15
+            if pan not in (1,2,3):raise ValueError('compiled stock PAN helpers require verified architectural PAN support')
+            result['architectural_pan']=dict(id_aa64mmfr1_el1=capabilities['ID_AA64MMFR1_EL1'],field=pan,stock_helpers_enabled=True)
             result['arm_init_entry'] = control_registers(before,boot_args=True)
             if int(before['pc'],16) != sym['_arm_init']:
                 raise ValueError('kernel stopped before genuine arm_init')
@@ -623,6 +636,11 @@ def execute(kernel, record, out, qemu, clang, userspace_manifest=None):
                     boundaries.pop(int(regs['pc'],16),None)
                     continue
                 result['stops'].append({'boundary':name,**control_registers(regs)})
+                if name=='other stop' or result.get('bounded_run_timeout'):
+                    result['unclassified_stop_system_registers']=rsp.system_registers()
+                    system=result['unclassified_stop_system_registers']
+                    for key in ('ELR_EL1','FAR_EL1'):
+                        if key in system:result['unclassified_'+key.lower()+'_mapping']=inspect_mapping(rsp,int(system[key],16),system)
                 if lifecycle and name.startswith('user:'):
                     label=name[5:]
                     done=lifecycle.observe(label,rsp,regs,inspect_mapping)
@@ -929,6 +947,8 @@ def execute(kernel, record, out, qemu, clang, userspace_manifest=None):
                                    ' at '+str(result.get('assertion_file'))+':'+str(result.get('assertion_line')))
             if result.get('kernel_fault'):
                 raise RuntimeError('genuine XNU data/instruction abort; inspect exact saved-state evidence')
+            if lifecycle and result.get('panic_reached'):
+                raise RuntimeError('genuine XNU panic: '+str(result.get('interrupt_mask_watchdog') or result.get('panic_format_from_audited_kernel')))
             if runtime_requested and not result.get('kernel_runtime_tests_passed'):
                 raise RuntimeError('requested genuine kernel VM/IPC tests did not complete; inspect recorded panic/phase')
             if '_ums512_security_proof' in sym and not result.get('security_runtime_tests_passed'):

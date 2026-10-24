@@ -31,6 +31,12 @@ jobs:
           else
             echo 'QEMU host NOT BUILT: native kernel has not passed its strict audit'
           fi
+      - name: Verify architectural PAN and instruction clock on owned QEMU fixture
+        if: always()
+        run: |
+          if [ -f out/native/report/kernel-audit.json ]; then
+            python3 tools/qemu_clock_probe.py --qemu "$PWD/out/native/qemu-host/build/qemu-system-aarch64" --clang "$(xcrun --find clang)"
+          fi
       - name: Execute the audited native kernel in QEMU
         if: always()
         env:

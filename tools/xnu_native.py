@@ -56,7 +56,7 @@ PATCHES = (
     "xnu/patches/0005-non-pac-build-fixes.patch",
 )
 CAPSULE = (
-    "tools/image4_vendor.py", "tools/image4_check.py", "tests/security_abi.c",
+    "tools/image4_vendor.py", "tools/image4_check.py", "tests/security_abi.c", "tools/qemu_clock_probe.py",
     "xnu/platform/ums512/ums512_img4.c", "xnu/platform/ums512/ums512_img4.h",
     "xnu/platform/ums512/ums512_img4_vectors.h",
     "xnu/platform/ums512/ums512_gic.c", "xnu/platform/ums512/ums512_irq_test.c",

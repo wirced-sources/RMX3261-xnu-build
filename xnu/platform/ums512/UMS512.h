@@ -11,6 +11,7 @@
 #define __ARM_COHERENT_CACHE__ 1
 #define __ARM_DEBUG__ 8
 #define __ARM_16K_PG__ 1 /* Proposed kernel granule, gated on ID_AA64MMFR0_EL1. */
+#define __ARM_PAN_AVAILABLE__ 1 /* Cortex-A55/A75 PAN; boot must verify MMFR1.PAN. */
 /* Full 16KB L1 covers 47 VA bits. The stock MacOSX ARM_LARGE_MEMORY
  * link address (-2TB) is outside the 39-bit subpage-L1 TTBR1 range. */
 #define __ARM64_PMAP_SUBPAGE_L1__ 0
