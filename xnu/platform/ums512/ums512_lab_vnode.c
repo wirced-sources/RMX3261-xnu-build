@@ -17,10 +17,17 @@
 #include <kern/clock.h>
 #include <kern/kalloc.h>
 #include <kern/debug.h>
+#include <mach/kern_return.h>
 #include <os/atomic_private.h>
 #include "ums512_lab_codesign.h"
 
 volatile struct ums512_lab_exec_proof ums512_lab_exec_proof;
+int ums512_lab_adjust_empty_entitlements(struct cs_blob *blob)
+{
+    if(!blob || blob->csb_entitlements || blob->csb_entitlements_blob || blob->csb_der_entitlements_blob ||
+       ums512_lab_authorize_vnode(blob->csb_vnode,blob)) return KERN_NO_ACCESS;
+    return KERN_SUCCESS;
+}
 int ums512_lab_authorize_vnode(struct vnode *vp,struct cs_blob *blob)
 {
     int error=EAUTH;

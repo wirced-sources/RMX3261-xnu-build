@@ -71,9 +71,9 @@ static int deny_signature(struct vnode *vp,struct label *label __unused,cpu_type
     struct cs_blob *blob,unsigned *flags,unsigned *signer,
     int mode __unused,unsigned platform __unused,char **desc __unused,size_t *length __unused)
 {
-    if(!vp || !blob || !flags || !signer || (*flags & ~(CS_VALID|CS_HARD|CS_KILL|CS_SIGNED)) ||
+    if(!vp || !blob || !flags || !signer || (*flags & ~(CS_VALID|CS_HARD|CS_KILL|CS_SIGNED|CS_ENFORCEMENT)) ||
        ums512_lab_authorize_vnode(vp,blob)) return EAUTH;
-    *flags|=CS_VALID|CS_HARD|CS_KILL|CS_SIGNED;
+    *flags|=CS_VALID|CS_HARD|CS_KILL|CS_SIGNED|CS_ENFORCEMENT;
     *signer=CS_SIGNER_TYPE_UNKNOWN;
     os_atomic_inc(&ums512_lab_exec_proof.signature_allowed,relaxed);
     return 0;
@@ -152,8 +152,15 @@ static kern_return_t no_proc_object(proc_t p __unused,const char *name __unused,
 static kern_return_t no_monitor(void *object __unused,const CEQueryContext_t context __unused,
     const void *signature __unused,const char *identity __unused,uint32_t flags __unused)
 { return KERN_NOT_SUPPORTED; }
-static kern_return_t no_adjust(void *object __unused,struct cs_blob *blob __unused)
-{ return KERN_NO_ACCESS; /* No signature/entitlement object can be published. */ }
+static kern_return_t no_adjust(void *object,struct cs_blob *blob)
+{
+    /* A genuine signature with NO entitlement object needs no CE index.
+     * Revalidate its real vnode/CD binding instead of fabricating a context.
+     * Any actual entitlement object remains unsupported and denied. */
+    if(object || !blob) return KERN_NO_ACCESS;
+    /* cs_blob is private BSD state, validated by the same attachment helper. */
+    return ums512_lab_adjust_empty_entitlements(blob);
+}
 
 void ums512_security_init(void)
 {

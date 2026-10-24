@@ -653,6 +653,8 @@ def execute(kernel, record, out, qemu, clang):
                     raw=bytes.fromhex(rsp.command(f'm{sym["_ums512_lab_exec_proof"]:x},40'))
                     result['lab_exec_runtime']=dict(zip(('exec_allowed','signature_allowed','files_verified','denials',
                         'vnode_negative_tests','reserved0','reserved1','reserved2'),struct.unpack('<8Q',raw)))
+                    raw=bytes.fromhex(rsp.command(f'm{sym["_ums512_exec_denial_proof"]:x},20'))
+                    result['actual_exec_denial_runtime']=dict(zip(('callbacks','regular_files','init_process','denied'),struct.unpack('<4Q',raw)))
                 if name=='__user_done':
                     if int(regs['cpsr'],16)&15 or int(regs['x0'],16)!=0x515:
                         raise RuntimeError('EL0 did not verify syscall result and reach its success marker')
@@ -668,6 +670,10 @@ def execute(kernel, record, out, qemu, clang):
                     result.setdefault('root_auth_returns',[]).append(int(regs['x0'],16)&0xffffffff)
                 if name in ('_bsd_init','_IOFindBSDRoot'):
                     inspect_crypto(rsp,sym,result)
+                    if '_ums512_lab_exec_proof' in sym:
+                        address=sym['_cs_process_enforcement_enable']
+                        result['global_cs_enforcement']=int.from_bytes(bytes.fromhex(rsp.command(f'm{address:x},4')),'little')
+                        result['global_cs_enforcement_mapping']=inspect_mapping(rsp,address,rsp.system_registers())
                 if '_ums512_storage_proof' in sym and name in ('_Assert','_panic','other stop','_vfs_mountroot',
                         'return:_vfs_mountroot','_ums512_qemu_hfs_root_auth','_devfs_kernel_mount','_load_init_program'):
                     raw=bytes.fromhex(rsp.command(f'm{sym["_ums512_storage_proof"]:x},80'))
@@ -901,6 +907,9 @@ def execute(kernel, record, out, qemu, clang):
                 result['rootfs_runtime_tests_passed']=True
                 if '_ums512_lab_exec_proof' in sym:
                     lab=result.get('lab_exec_runtime',{})
+                    enforcement=result.get('global_cs_enforcement_mapping',{})
+                    if result.get('global_cs_enforcement')!=1 or not enforcement.get('read_only') or not enforcement.get('privileged_execute_never'):
+                        raise RuntimeError('stock global code signing enforcement must be enabled and locked RO/NX')
                     if not all(result.get(k) for k in ('user_el0_execution_verified','syscall_roundtrip_verified',
                                'genuine_getpid_handler_returned','user_program_completed')):
                         raise RuntimeError('genuine signed Mach-O/EL0/syscall roundtrip did not complete')

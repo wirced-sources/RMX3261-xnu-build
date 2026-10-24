@@ -22,7 +22,9 @@ another preparation. Existing workspaces are never reset or deleted.
 
 The native configuration copies upstream `config/MASTER.arm64.MacOSX`, matching
 the MacOSX SDK and the profile used by ios-sweet, adding only
-`ums512 nos_arm_asm nos_arm_pmap`. Protection feature groups, allocator metadata,
+`ums512 nos_arm_asm nos_arm_pmap config_enforce_signed_code`. The last feature
+strengthens the MacOSX default to stock global process code-signing enforcement;
+attachment errors must never be ignored for the lab user process. Protection feature groups, allocator metadata,
 MACF and integrity policies are retained. Only KPC/kperf profiling is excluded:
 the required Apple PMU source is absent and no Cortex backend exists. Apple
 AMCC source files are excluded for UMS512 because that controller is absent;

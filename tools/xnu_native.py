@@ -81,7 +81,7 @@ CAPSULE = (
     "tools/xnu_native.py", "tools/xnu_config.py", "tools/macho_kernel.py", "tools/xnu_kernel_qemu.py", "tools/fdt.py", "tools/qemu_host.py", "xnu/native.lock.json",
     "xnu/sources.lock.json", "xnu/platform/ums512/UMS512.h",
     "xnu/platform/ums512/cpu_entry.h", "ci/xnu-native.yml",
-    "docs/NATIVE_BUILD.md", *PATCHES,
+    "docs/NATIVE_BUILD.md", "docs/LAB_CODE_SIGNING.md", *PATCHES,
 )
 
 
@@ -146,7 +146,7 @@ def fetch():
 def full_master(text):
     """Preserve protection features; exclude unsupported Apple PMU profiling."""
     pattern = r"^(#\s+KERNEL_BASE\s*=\s*\[)([^\]]+)(\])"
-    text, count = re.subn(pattern, r"\1\2 ums512 nos_arm_asm nos_arm_pmap \3", text, flags=re.M)
+    text, count = re.subn(pattern, r"\1\2 ums512 nos_arm_asm nos_arm_pmap config_enforce_signed_code \3", text, flags=re.M)
     if count != 1:
         raise ValueError("upstream MASTER group changed")
     pattern = r"^(#\s+PERF_DBG_BASE\s*=\s*\[)([^\]]+)(\])"
@@ -249,7 +249,7 @@ def prepare(work):
     board = full_master(original)
     _, before = configure(master, master_for_validation(original))
     _, after = configure(master, master_for_validation(board))
-    if (set(after) - set(before) != {"ums512", "nos_arm_asm", "nos_arm_pmap"}
+    if (set(after) - set(before) != {"ums512", "nos_arm_asm", "nos_arm_pmap", "config_enforce_signed_code"}
             or set(before) - set(after) != {"kpc", "kperf"}):
         raise ValueError("native board unexpectedly changed upstream features")
     (src / "config/MASTER.arm64.ums512.MacOSX").write_text(board, encoding="utf-8", newline="\n")

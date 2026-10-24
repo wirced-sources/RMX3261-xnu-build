@@ -11,6 +11,7 @@ int ums512_lab_verify_superblob(const uint8_t *,size_t,uint64_t,uint8_t [32]);
 struct vnode;
 struct cs_blob;
 int ums512_lab_authorize_vnode(struct vnode *,struct cs_blob *);
+int ums512_lab_adjust_empty_entitlements(struct cs_blob *);
 void ums512_lab_vnode_negative_tests(void);
 extern volatile struct ums512_lab_exec_proof {
     uint64_t exec_allowed,signature_allowed,files_verified,denials;
