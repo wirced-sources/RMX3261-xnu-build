@@ -35,6 +35,8 @@ class UserLifecycle:
         def require(ok,message):
             if not ok:raise RuntimeError('user lifecycle: '+message)
         if reg('cpsr')&15:raise RuntimeError('owned program marker must execute in EL0')
+        if name not in ('entry_init','entry_child','init_pid','child_pid'):
+            require(not reg('sp')&15,'userspace stack must be 16-byte aligned after startup')
         event=dict(marker=name,pc=regs['pc'],cpsr=regs['cpsr'])
         p['events'].append(event)
         error=bool(reg('cpsr')&0x20000000)

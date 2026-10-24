@@ -26,6 +26,9 @@ _lab_init_pid:
  b.cs L_fail
  cmp x0,#1
  b.ne L_fail
+ mov x9,sp
+ and x9,x9,#-16
+ mov sp,x9
  sub sp,sp,#512
  adr x0,L_root
  mov x1,#0

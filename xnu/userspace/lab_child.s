@@ -16,10 +16,13 @@ _lab_child_pid:
  cmp x0,#1
  b.ls L_fail
  mov x20,x0
- ldr x0,[sp]
+ mov x9,sp
+ and x10,x9,#-16
+ mov sp,x10
+ ldr x0,[x9]
  cmp x0,#2
  b.ne L_fail
- ldr x0,[sp,#16]
+ ldr x0,[x9,#16]
  ldrb w22,[x0]
  sub w22,w22,#48
  cmp w22,#9

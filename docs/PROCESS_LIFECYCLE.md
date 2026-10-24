@@ -60,6 +60,11 @@ backend ASan/UBSan accepts both and rejects unsigned/altered/CMS/foreign assets.
 check.py102unit+8offlineM0QEMU PASS. These are not runtime lifecycle evidence.
 One local assembler error (unencodable cmp immediate0x2500) was fixed using a
 register comparison before any full CI build. Native57 exact evidence is retained.
+The first dispatched native58 was cancelled before accepting a runtime result:
+preflight found the stock static entry stack is8 modulo16, while SCTLR.SA0 is
+enabled. Both owned entry stubs now align SP before SP-based memory access;
+child argc/argv use the saved original pointer. The observer also requires
+aligned SP after startup. SCTLR alignment protection remains unchanged.
 
 After confirmation, stop this iteration. The next separately authorized scope
 should resolve the pinned dyld startup ABI/LC_LOAD_DYLINKER, a minimal open-source
