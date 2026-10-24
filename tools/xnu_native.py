@@ -573,6 +573,10 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
             fields=row.split()
             if len(fields)==3 and fields[2].startswith('_ums512_hw_'):
                 entries[fields[2]]=dict(va=int(fields[0],16),kind=fields[1])
+        for name in ('_ums512_hw_clock_identify','_ums512_hw_irq_initialize'):
+            if name not in entries or not any(s['initprot']&4 and not s['initprot']&2 and
+                s['vmaddr']<=entries[name]['va']<s['vmaddr']+s['filesize'] for s in result['segments']):
+                raise ValueError('physical backend entry missing from executable kernel segment: '+name)
         required_gates=('UMS512HW: qualified physical handoff missing; M1 NO-GO',
                         'UMS512HW: missing/inconsistent clock observations',
                         'UMS512HW: secure delegation/ownership/state not acceptable')
@@ -583,6 +587,7 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
         if any(n in symbols for n in ('_ums512_gic_init','RMXQemuPlatform','QemuRootStorage')):
             raise ValueError('QEMU backend leaked into physical kernel')
         result['hardware_backend_audit']=dict(symbols=entries,required_runtime_gate_strings=list(required_gates),
+            required_backend_entries_executable=True,
             qemu_backends_absent=True,runtime_contract_emitted_by_adapter=False,
             physical_measurements_verified=False,m1='NO-GO')
     (report / "kernel-audit.json").write_text(json.dumps(result, indent=2) + "\n")
