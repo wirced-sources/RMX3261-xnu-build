@@ -241,7 +241,7 @@ class RSP:
         data = bytes.fromhex(self.command('g'))
         if len(data) < 33*8:
             raise ValueError('short AArch64 register set')
-        indices = [(f'x{i}',i) for i in range(6)] + [('x12',12),('lr',30),('sp',31),('pc',32)]
+        indices = [(f'x{i}',i) for i in range(7)] + [('x12',12),('x16',16),('lr',30),('sp',31),('pc',32)]
         result = {name: hex(struct.unpack_from('<Q', data, i*8)[0]) for name,i in indices}
         if len(data) >= 268:
             result['cpsr'] = hex(struct.unpack_from('<I',data,264)[0])
@@ -493,7 +493,7 @@ def execute(kernel, record, out, qemu, clang):
         '-gdb',f'tcp:127.0.0.1:{port}','-kernel',str(image),'-device',f'loader,file={out / "kernel.physical.bin"},addr={header_pa:#x},force-raw=on'],stdout=log,stderr=log)
     result = {'kernel_sha256':report['sha256'],'arm_init_executed':False,
               'kernel_boot_completed':False,'hardware_verified':False,'stops':[],
-              'observation_window_seconds':90 if '_ums512_storage_proof' in sym else 45,'boundary_limit':256,
+              'observation_window_seconds':180 if '_ums512_lab_exec_proof' in sym else (90 if '_ums512_storage_proof' in sym else 45),'boundary_limit':256,
               'boot_arguments':command_line.decode('ascii'),
               'virtual_timer_fdt_binding':timer_binding,'virtual_cpu_fdt_binding':cpu_binding,
               'virtual_uart_fdt_binding':uart,
