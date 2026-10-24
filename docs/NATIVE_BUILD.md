@@ -9,6 +9,21 @@ trust-cache, KPC, or crypto substitutes.
 
 ## Execution
 
+UMS512HW is now a separate full-build target using this same pinned toolchain:
+`python3 tools/xnu_native.py --fetch --build --target ums512hw`. The hardware
+workflow never executes that image. Native Apple run40133458008 compiled the
+actual HW PE/core graph and reached strict ARM64 linking, blocked only by
+`_ums512_hw_clock_identify` and `_ums512_hw_irq_initialize`. No final HW kernel
+or new boot is claimed. Exact source/objects/config/link references and remaining
+physical dependencies are in [UMS512HW_NATIVE_BUILD.md](UMS512HW_NATIVE_BUILD.md)
+and [ums512hw-native-validation.json](ums512hw-native-validation.json).
+The default/qemu target retains native61's separate path and security checks.
+After db4ffe9 both physical functions have real implementations with strict
+runtime handoff/state refusal. They do not invent clocks or write GIC security
+policy. Local OSFMK compilation passed; a new full Apple link is pending.
+The existing offline adapter emits no qualification contract. Details and
+limits are in UMS512_HW_BACKENDS.md; M1 remains NO-GO.
+
 ```sh
 # Network is explicit; every source is checked against a commit and Git tree.
 python3 tools/xnu_native.py --fetch

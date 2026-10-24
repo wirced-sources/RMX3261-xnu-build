@@ -64,6 +64,8 @@ CAPSULE = (
     "xnu/platform/ums512/platform.c", "xnu/platform/ums512/platform.h",
     "xnu/platform/ums512/diag.c", "xnu/platform/ums512/abi.c", "xnu/platform/ums512/entry_regs.S",
     "xnu/platform/ums512/UMS512HardwarePlatform.cpp", "xnu/platform/ums512/ums512_hw_backend.h",
+    "xnu/platform/ums512/ums512_hw_policy.h", "xnu/platform/ums512/ums512_hw_policy.c",
+    "xnu/platform/ums512/ums512_hw_clock.c", "xnu/platform/ums512/ums512_hw_irq.c",
     "tools/image4_vendor.py", "tools/image4_check.py", "tests/security_abi.c", "tools/qemu_clock_probe.py",
     "xnu/platform/ums512/ums512_img4.c", "xnu/platform/ums512/ums512_img4.h",
     "xnu/platform/ums512/ums512_img4_vectors.h",
@@ -530,7 +532,8 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
             "arm_init", "arm_vm_init", "pmap", "vm_map", "vm_fault", "vm_page", "kalloc", "zalloc",
             "ipc_kmsg", "mach_msg", "device_tree", "OSObject", "IOService")}
         platform_objects={n:h for n,h in objects.items() if Path(n).stem in ('UMS512HardwarePlatform',
-            'ums512_platform','ums512_diag','ums512_abi','ums512_entry_regs','ums512_handoff','pe_fiq','pe_identify_machine')}
+            'ums512_platform','ums512_diag','ums512_abi','ums512_entry_regs','ums512_handoff',
+            'ums512_hw_clock','ums512_hw_irq','ums512_hw_policy','pe_fiq','pe_identify_machine')}
         for name,record in platform_objects.items():
             nm=subprocess.run([tools['nm'],'-u',str(target/name)],capture_output=True,text=True,timeout=30)
             record['undefined_symbols']=nm.stdout.splitlines() if not nm.returncode else ['nm failed: '+nm.stderr[:1000]]
@@ -561,6 +564,25 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
     result.update(kernel_linked=True, arm_init_executed=False, hardware_verified=False,
                   source_commit=specs()[1]["xnu"]["commit"], diagnostic_observer_included=False,
                   upstream_install_succeeded=make_error is None)
+    if hardware:
+        # Observe symbols/strings in the strict, unmodified link result. Private
+        # functions may be inlined by LTO; object provenance is recorded above.
+        symbols=output(tools['nm'],'-n',kernels[0])
+        entries={}
+        for row in symbols.splitlines():
+            fields=row.split()
+            if len(fields)==3 and fields[2].startswith('_ums512_hw_'):
+                entries[fields[2]]=dict(va=int(fields[0],16),kind=fields[1])
+        required_gates=('UMS512HW: qualified physical handoff missing; M1 NO-GO',
+                        'UMS512HW: missing/inconsistent clock observations',
+                        'UMS512HW: secure delegation/ownership/state not acceptable')
+        if not all(s.encode()+b'\0' in data for s in required_gates):
+            raise ValueError('physical runtime refusal paths absent from final kernel')
+        if any(n in symbols for n in ('_ums512_gic_init','RMXQemuPlatform','QemuRootStorage')):
+            raise ValueError('QEMU backend leaked into physical kernel')
+        result['hardware_backend_audit']=dict(symbols=entries,required_runtime_gate_strings=list(required_gates),
+            qemu_backends_absent=True,runtime_contract_emitted_by_adapter=False,
+            physical_measurements_verified=False,m1='NO-GO')
     (report / "kernel-audit.json").write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result, indent=2), flush=True)
     shutil.copyfile(kernels[0], report / ("kernel.development."+machine.lower()+".macho"))
@@ -611,7 +633,11 @@ if __name__ == "__main__":
     if args.fetch:
         fetch()
     if args.prepare:
-        prepare(args.work)
+        if args.target == 'ums512hw':
+            from ums512_hardware_build import prepare as prepare_hardware
+            prepare_hardware(args.work,native=True)
+        else:
+            prepare(args.work)
     if args.build:
         build(args.work,target=args.target)
     if args.capsule:

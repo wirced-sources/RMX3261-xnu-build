@@ -2,7 +2,7 @@
  * Hardware-only IOKit contract. No MMIO access or guessed hardware services.
  * Not a working Platform Expert: start refuses activation until real firmware,
  * IRQ, clock, entropy/RTC and storage backends are implemented and qualified.
- * Kept out of the QEMU build and its public capsule.
+ * Kept out of the QEMU kernel; included as hardware-only source in the capsule.
  */
 #if !defined(UMS512_HARDWARE_TARGET)
 #error Hardware Platform Expert must not enter the QEMU configuration

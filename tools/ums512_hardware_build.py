@@ -1,14 +1,16 @@
 """Separate UMS512HW source/config/component path; no hardware-ready kernel.
 
-Uses pinned genuine XNU and common native portability patches only. Full install
-is deliberately unavailable: physical IRQ/entropy/RTC/storage are unqualified.
-Never delegates physical execution to the QEMU drivers or publishes anything.
+Uses pinned genuine XNU and common native portability patches only. Native
+prepare enables the full Apple build graph with gated physical backends;
+the component-only mode retains its explicit compile qualification refusals.
+Never delegates physical execution to QEMU drivers or publishes anything.
 """
 import argparse
 import json
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import subprocess
 
@@ -62,9 +64,10 @@ def prepare(work, native=False):
     fiq=src/'pexpert/arm/pe_fiq.c'
     clocks=src/'pexpert/arm/pe_identify_machine.c'
     if native:
-        # Real call sites, not success stubs. The native linker must diagnose
-        # these missing physical implementations; do not borrow QEMU backends.
-        shutil.copyfile(PLATFORM/'ums512_hw_backend.h',src/'pexpert/arm/ums512_hw_backend.h')
+        # Physical implementations have fail-closed handoff/state validation.
+        # No QEMU backend, guessed rates or secure-world configuration writes.
+        for name in ('ums512_hw_backend.h','ums512_hw_policy.h'):
+            shutil.copyfile(PLATFORM/name,src/'pexpert/arm'/name)
         rewrite(fiq,'#if HAS_GIC_V3',
             '#if UMS512_HARDWARE_TARGET\n#include "ums512_hw_backend.h"\n'
             'void pe_init_fiq(void) { ums512_hw_irq_initialize(); }\n#elif HAS_GIC_V3')
@@ -77,6 +80,9 @@ def prepare(work, native=False):
             encoding='utf-8',newline='\n')
         # Platform computations and transfer use the real native build graph.
         target=src/'osfmk/ums512'
+        for name in ('ums512_hw_clock.c','ums512_hw_irq.c','ums512_hw_policy.c',
+                     'ums512_hw_backend.h','ums512_hw_policy.h'):
+            shutil.copyfile(PLATFORM/name,target/name)
         for name in ('platform.c','platform.h','diag.c','abi.c','entry_regs.S'):
             dest={'platform.c':'ums512_platform.c','diag.c':'ums512_diag.c','abi.c':'ums512_abi.c',
                   'entry_regs.S':'ums512_entry_regs.s'}.get(name,name)
@@ -90,7 +96,8 @@ def prepare(work, native=False):
         facts(target)
         with (src/'osfmk/conf/files.arm64').open('a',newline='\n') as stream:
             stream.write('\nOPTIONS/ums512_hardware_source\toptional ums512_hardware_source\n')
-            for name in ('ums512_platform.c','ums512_diag.c','ums512_abi.c','ums512_entry_regs.s','ums512_handoff.s'):
+            for name in ('ums512_platform.c','ums512_diag.c','ums512_abi.c','ums512_entry_regs.s','ums512_handoff.s',
+                         'ums512_hw_clock.c','ums512_hw_irq.c','ums512_hw_policy.c'):
                 stream.write(f'\nosfmk/ums512/{name}\toptional ums512_hardware_source\n')
         from xnu_crypto import install as install_crypto
         install_crypto(src)
@@ -104,21 +111,22 @@ def prepare(work, native=False):
     board=hardware_master(original)
     (src/'config/MASTER.arm64.ums512hw.MacOSX').write_text(board,encoding='ascii',newline='\n')
     master=(src/'config/MASTER').read_text()
-    _,native=configure(master,master_for_validation(full_master(original)))
+    _,native_features=configure(master,master_for_validation(full_master(original)))
     conf,features=configure(master,master_for_validation(board))
-    if set(features)-set(native)!={'ums512_hardware'} or set(native)-set(features):
+    if set(features)-set(native_features)!={'ums512_hardware'} or set(native_features)-set(features):
         raise ValueError('hardware configuration changed native security features')
     report=dict(target='DEVELOPMENT ARM64 UMS512HW',source_commit=specs()[1]['xnu']['commit'],
         patches={p:sha(ROOT/p) for p in COMMON},features=features,
         qemu_drivers_included=False,security_features_preserved=True,
         full_kernel_linked=False,hardware_qualified=False,m1='NO-GO',
-        blockers=['physical Group1NS/SRE/delegation and timer backend','observed entropy and RTC provider',
+        blockers=['qualified physical Group1NS/SRE/delegation and timer delivery','observed entropy and RTC provider',
                   'live memory/cache/EL and recovery proof','physical storage and complete PE implementation'],
         compile_gate=QUALIFICATION_ERROR)
     report['native_link_attempt']=native
     if native:
         report['compile_gate']=None
-        report['required_physical_implementations']=['ums512_hw_irq_initialize','ums512_hw_clock_identify']
+        report['physical_backends']=['ums512_hw_irq_initialize','ums512_hw_clock_identify']
+        report['runtime_gate']='qualified loader contract and consistent live state required; adapter emits no qualification'
     # Configuration generation uses actual SETUP/config, not header facades.
     host=ROOT/'out/m010/host';config_binary=host/'config'
     if os.name=='nt' and config_binary.exists():
@@ -134,7 +142,8 @@ def prepare(work, native=False):
         makefile=(generated/'Makefile').read_text()
         if '-DUMS512_HARDWARE_TARGET' not in makefile: raise ValueError('hardware option not materialized')
         if native:
-            for name in ('ums512_platform','ums512_diag','ums512_abi','ums512_entry_regs','ums512_handoff'):
+            for name in ('ums512_platform','ums512_diag','ums512_abi','ums512_entry_regs','ums512_handoff',
+                         'ums512_hw_clock','ums512_hw_irq','ums512_hw_policy'):
                 if name+'.o' not in makefile:raise ValueError('missing native hardware object '+name)
         report['enforcement_config']=enforcement_probe(makefile,(src/'bsd/kern/kern_cs.c').read_text(),[tool('clang','CLANG')])
         report['generated_headers']={p.name:sha(p) for p in generated.glob('*.h')}
@@ -158,7 +167,7 @@ def components(directory):
     # Reuse the independent component builder: same real C memory/CPU gates,
     # data ABI, snapshot and new PA-only transfer; no kernel entry observer.
     sources=[PLATFORM/p for p in ('platform.c','diag.c','entry_regs.S','abi.c')]
-    sources += [ROOT/'shim/ums512/handoff.S',upstream_abi(directory)]
+    sources += [ROOT/'shim/ums512/handoff.S',upstream_abi(directory),PLATFORM/'ums512_hw_policy.c']
     src=pinned_source('xnu')
     result={}
     env=dict(os.environ,TMP=str(directory),TEMP=str(directory),TMPDIR=str(directory))
@@ -171,6 +180,39 @@ def components(directory):
             subprocess.run([*args,'-c',str(source),'-o',str(path)],env=env,check=True,capture_output=True,timeout=30)
             result[name]=dict(bytes=path.stat().st_size,sha256=sha(path),**audit_object(path,macho))
     return result
+
+
+def backend_compile(work):
+    """Local real OSFMK C compilation; no SDK/MIG prototype replacements."""
+    work=Path(work);src=work/'xnu';generated=work/'generated'
+    definitions=shlex.split(re.search(r'^export CONFIG_DEFINES = (.*)$',
+        (generated/'Makefile').read_text(),re.M)[1])
+    exported=work/'exports/san';exported.mkdir(parents=True,exist_ok=True)
+    # Same public sanitizer header export layout used by the upstream build.
+    for folder in ('san/memory','san/coverage'):
+        for path in (src/folder).glob('*.h'):shutil.copyfile(path,exported/path.name)
+    flags=['--target=arm64-apple-macos11',*FLAGS,'-fblocks','-DKERNEL=1',
+        '-DKERNEL_PRIVATE=1','-DXNU_KERNEL_PRIVATE=1','-DMACH_KERNEL_PRIVATE=1',
+        '-DMACH_KERNEL=1','-DPRIVATE=1','-DARM64_BOARD_CONFIG_UMS512',
+        # Preferred Mach-O KVA from native61 layout, never a physical load PA.
+        '-DVM_KERNEL_LINK_ADDRESS=0xfffffe0007004000',*definitions,
+        '-include',str(generated/'meta_features.h')]
+    # OSFMK must precede BSD: both have kern/ast.h with different namespaces.
+    for inc in (generated,work/'exports',src/'osfmk',src/'bsd',src/'pexpert',
+                src/'iokit',src/'libkern',src/'osfmk/libsa',src/'EXTERNAL_HEADERS',src):
+        flags+=['-I',str(inc)]
+    report={}
+    for name in ('ums512_hw_policy','ums512_hw_clock','ums512_hw_irq'):
+        obj=work/(name+'.macho.o')
+        process=subprocess.run([tool('clang','CLANG'),*flags,'-c',str(src/'osfmk/ums512'/(name+'.c')),
+            '-o',str(obj)],capture_output=True,text=True,timeout=30,
+            env={**os.environ,'TMP':str(work),'TEMP':str(work),'TMPDIR':str(work)})
+        record=dict(exit=process.returncode,stderr=process.stderr)
+        if not process.returncode:record.update(audit_object(obj,True),sha256=sha(obj),bytes=obj.stat().st_size)
+        report[name]=record
+    (work/'backend-compile.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8',newline='\n')
+    if any(r['exit'] for r in report.values()):raise RuntimeError('local backend compile failed; see backend-compile.json')
+    return report
 
 
 def pe_probe(work):
@@ -206,6 +248,7 @@ if __name__=='__main__':
     parser.add_argument('--work',type=Path,default=ROOT/'out/ums512-hardware')
     parser.add_argument('--prepare',action='store_true')
     parser.add_argument('--pe-probe',action='store_true')
+    parser.add_argument('--backend-probe',action='store_true',help='compile actual physical C backends using generated OSFMK context')
     parser.add_argument('--native-prepare',action='store_true',help='full native graph with unresolved real hardware interfaces')
     a=parser.parse_args();a.work.resolve().relative_to((ROOT/'out').resolve())
     report=prepare(a.work,native=a.native_prepare) if a.prepare else dict(full_kernel_linked=False,m1='NO-GO')
@@ -213,5 +256,6 @@ if __name__=='__main__':
     if report['objects']!=repeat:raise ValueError('hardware component build not reproducible')
     report['reproducible']=True
     if a.pe_probe:report['pe_probe']=pe_probe(a.work)
+    if a.backend_probe:report['backend_compile']=backend_compile(a.work)
     (a.work/'results.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8',newline='\n')
-    print('UMS512HW: 12 component objects reproducible; full kernel BLOCKED, hardware UNVERIFIED; M1 NO-GO')
+    print('UMS512HW: 14 component objects reproducible; native link has separate evidence; hardware UNVERIFIED; M1 NO-GO')
