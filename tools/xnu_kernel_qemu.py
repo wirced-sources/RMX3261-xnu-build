@@ -202,6 +202,18 @@ def extract_wrapper(data):
     return sections[0]
 
 
+def read_kernel_memory_el1(rsp, registers, address, size):
+    """Read fresh kernel VA at an EL1 stop; never change guest state or fall back."""
+    if int(registers['cpsr'],16)&15 not in (4,5):
+        raise RuntimeError('kernel VA observation requires an EL1 stop')
+    if not 0xffff000000000000<=address<=0xffffffffffffffff or not 0<size<=4096 or address+size>1<<64:
+        raise ValueError('invalid bounded kernel observation address')
+    data=bytes.fromhex(rsp.command(f'm{address:x},{size:x}'))
+    if len(data)!=size:
+        raise RuntimeError('short kernel memory observation')
+    return data
+
+
 class RSP:
     def __init__(self, conn):
         self.conn = conn
@@ -569,7 +581,7 @@ def execute(kernel, record, out, qemu, clang):
                      '_ums512_qemu_hfs_root_auth','_devfs_kernel_mount',
                      '_ums512_qemu_rootfs_selftest',
                      '_bsd_utaskbootstrap','_bsd_ast','_load_init_program','_exec_activate_image',
-                     '_load_machfile','_machine_thread_set_state','_cs_validate_page','_getpid',
+                     '_load_machfile','_ubc_cs_blob_add','_machine_thread_set_state','_cs_validate_page','_getpid',
                      '_ums512_pthread_register','_ums512_pthread_start','_pthread_kext_register',
                      '_pthread_init','__pthread_init',
                      '__ZN15RMXQemuPlatform5startEP9IOService',
@@ -648,13 +660,16 @@ def execute(kernel, record, out, qemu, clang):
                 if name=='return:_cs_validate_page':
                     values=[int.from_bytes(bytes.fromhex(rsp.command(f'm{a:x},4')),'little') for a in page_outputs]
                     result['native_code_page_validation']=dict(zip(('validated','tainted','nx'),values))
+                if name=='return:_ubc_cs_blob_add':
+                    result.setdefault('native_signature_attachment_returns',[]).append(int(regs['x0'],16)&0xffffffff)
                 if name=='return:_getpid': result['genuine_getpid_handler_returned']=True
-                if '_ums512_lab_exec_proof' in sym and name in ('_panic','__user_done','return:_exec_activate_image'):
-                    raw=bytes.fromhex(rsp.command(f'm{sym["_ums512_lab_exec_proof"]:x},40'))
+                if '_ums512_lab_exec_proof' in sym and name=='return:_getpid':
+                    raw=read_kernel_memory_el1(rsp,regs,sym['_ums512_lab_exec_proof'],64)
                     result['lab_exec_runtime']=dict(zip(('exec_allowed','signature_allowed','files_verified','denials',
                         'vnode_negative_tests','reserved0','reserved1','reserved2'),struct.unpack('<8Q',raw)))
-                    raw=bytes.fromhex(rsp.command(f'm{sym["_ums512_exec_denial_proof"]:x},20'))
+                    raw=read_kernel_memory_el1(rsp,regs,sym['_ums512_exec_denial_proof'],32)
                     result['actual_exec_denial_runtime']=dict(zip(('callbacks','regular_files','init_process','denied'),struct.unpack('<4Q',raw)))
+                    result['exec_counters_sample']=dict(boundary=name,**control_registers(regs),after_exec=True)
                 if name=='__user_done':
                     if int(regs['cpsr'],16)&15 or int(regs['x0'],16)!=0x515:
                         raise RuntimeError('EL0 did not verify syscall result and reach its success marker')
@@ -913,7 +928,11 @@ def execute(kernel, record, out, qemu, clang):
                     if not all(result.get(k) for k in ('user_el0_execution_verified','syscall_roundtrip_verified',
                                'genuine_getpid_handler_returned','user_program_completed')):
                         raise RuntimeError('genuine signed Mach-O/EL0/syscall roundtrip did not complete')
-                    if lab.get('exec_allowed')!=1 or lab.get('signature_allowed',0)<1 or lab.get('files_verified',0)<2 or lab.get('vnode_negative_tests')!=3:
+                    if result.get('exec_counters_sample',{}).get('boundary')!='return:_getpid':
+                        raise RuntimeError('fresh post-exec EL1 counters were not observed')
+                    if result.get('native_signature_attachment_returns')!=[0]:
+                        raise RuntimeError('native signature attachment did not return success')
+                    if lab.get('exec_allowed')!=1 or lab.get('signature_allowed',0)<1 or lab.get('files_verified',0)<2 or lab.get('vnode_negative_tests')!=4 or lab.get('denials')!=4:
                         raise RuntimeError('real CMS/CD signature attachment or untrusted vnode rejection not confirmed')
                     page=result.get('native_code_page_validation',{})
                     if not page.get('validated') or page.get('tainted') or page.get('nx'):

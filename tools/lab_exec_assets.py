@@ -25,7 +25,7 @@ def command(args,timeout=60):
 def header_array(name,data):
     return 'static const unsigned char '+name+'[] = {'+','.join(map(str,data))+'};\n'
 
-def sign(work,staging,clang,ld,openssl=None):
+def sign(work,staging,clang,ld,openssl=None,include_foreign=True):
     work,staging=Path(work).resolve(),Path(staging).resolve()
     work.relative_to((ROOT/'out').resolve());staging.relative_to(work)
     crypto=work/'lab-signing';crypto.mkdir()
@@ -104,6 +104,16 @@ authorityKeyIdentifier=keyid,issuer
             leaf_sha256=hashlib.sha256(leaf_der).hexdigest(),root_sha256=hashlib.sha256(root_der).hexdigest(),
             laboratory_only=True,private_keys_exported=False,apple_userland=False,syscall='Darwin ARM64 getpid20, svc0x80',
             unsigned_fixture=unsigned)
+        if include_foreign:
+            # A genuine independently valid chain, deliberately absent from
+            # the primary kernel pins. Its private keys are also discarded.
+            foreign_work=work/'foreign-chain';foreign_work.mkdir()
+            foreign_content=foreign_work/'content';(foreign_content/'sbin').mkdir(parents=True)
+            foreign=sign(foreign_work,foreign_content,clang,ld,openssl,include_foreign=False)
+            shutil.copyfile(foreign_content/'sbin/launchd',staging/'sbin/foreign-init')
+            (staging/'sbin/foreign-init').chmod(0o755)
+            result['foreign_chain_negative']=dict(sha256=foreign['sha256'],root_sha256=foreign['root_sha256'],
+                leaf_sha256=foreign['leaf_sha256'],independent_cms_verified=True,private_keys_exported=False)
         (crypto/'audit.json').write_text(json.dumps(result,indent=2)+'\n',encoding='utf-8',newline='\n')
         return result
     finally:
@@ -121,7 +131,7 @@ def check(source,crypto,asset,compiler=None,sanitize=False):
 #include <stdlib.h>
 #include <stdint.h>
 int main(int argc,char **argv) {
- if(argc!=3) return 2;
+ if(argc<3) return 2;
  FILE *f=fopen(argv[1],"rb");if(!f)return 3;
  unsigned char *p=malloc(262144);size_t n=fread(p,1,262144,f);fclose(f);
  unsigned char d[32];uint64_t now=strtoull(argv[2],NULL,10);
@@ -134,7 +144,12 @@ int main(int argc,char **argv) {
  }
  if(ums512_lab_verify_file(p,n-1,now,d) || ums512_lab_verify_file(p,n,0,d) ||
     ums512_lab_verify_file(p,n,4102444800ULL,d))return 6;
- free(p);puts("CMS chain/CodeDirectory/pages positive and altered/expired negative checks PASS");return 0;
+ for(int i=3;i<argc;i++) {
+  f=fopen(argv[i],"rb");if(!f)return 7;
+  n=fread(p,1,262144,f);fclose(f);
+  if(ums512_lab_verify_file(p,n,now,d))return 8;
+ }
+ free(p);puts("CMS chain/CodeDirectory/pages positive and altered/expired/foreign negative checks PASS");return 0;
 }
 ''',encoding='utf-8',newline='\n')
     def path(p):
@@ -149,5 +164,8 @@ int main(int argc,char **argv) {
     if sanitize: args+=['-fsanitize=address,undefined','-fno-sanitize-recover=all']
     if platform.system()=='Darwin': args+=['-isysroot',subprocess.check_output(['xcrun','--sdk','macosx','--show-sdk-path'],text=True).strip()]
     subprocess.run(args,check=True,timeout=120)
-    command([*(['wsl','-d','Ubuntu','--exec'] if platform.system()=='Windows' else []),path(binary),path(asset),str(int(time.time()))])
+    negatives=[asset.parent/n for n in ('unsigned-init','altered-init','bad-cms-init','foreign-init')]
+    if not all(p.is_file() for p in negatives):raise ValueError('missing actual untrusted CMS fixtures')
+    command([*(['wsl','-d','Ubuntu','--exec'] if platform.system()=='Windows' else []),path(binary),path(asset),str(int(time.time())),
+             *map(path,negatives)])
     print('CMS/CodeDirectory actual host verifier PASS',flush=True)

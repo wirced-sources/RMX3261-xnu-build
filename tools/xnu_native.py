@@ -158,7 +158,11 @@ def full_master(text):
     text, count = re.subn(pattern, without_apple_pmu, text, flags=re.M)
     if count != 1:
         raise ValueError("upstream PMU group missing")
-    return text + "\noptions UMS512 # <ums512>\n"
+    # Public MASTER names this attribute but has no corresponding option.
+    # SETUP/config emits CONFIG_DEFINES only for actual options declarations.
+    if re.search(r"^\s*options\s+CONFIG_ENFORCE_SIGNED_CODE\b", text, re.M):
+        raise ValueError("upstream enforcement declaration changed; review configuration")
+    return text + "\noptions UMS512 # <ums512>\noptions CONFIG_ENFORCE_SIGNED_CODE # <config_enforce_signed_code>\n"
 
 
 def master_for_validation(text):
@@ -506,6 +510,14 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
         (report / "object-inventory.json").write_text(json.dumps(inventory, indent=2) + "\n")
         print(json.dumps(inventory, indent=2), flush=True)
     from macho_kernel import audit
+    from xnu_config import enforcement_probe
+    config_proofs={}
+    for component in ('osfmk','bsd'):
+        proof=enforcement_probe((target/component/'DEVELOPMENT/Makefile').read_text(),
+            (src/'bsd/kern/kern_cs.c').read_text(),[tools['clang']])
+        config_proofs[component]=proof
+    (report/'code-signing-config.json').write_text(json.dumps(config_proofs,indent=2)+'\n')
+    print(json.dumps(dict(code_signing_config=config_proofs),indent=2),flush=True)
     kernels = list((work / "xnu.obj").rglob("kernel.development.ums512.unstripped"))
     if not kernels and make_error:
         raise make_error

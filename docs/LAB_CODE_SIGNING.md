@@ -68,6 +68,9 @@ still fail closed, and no CE interpreter/context is invented.
 
 Negative root assets contain unsigned code, a changed signed code page and a
 damaged CMS signature. The verifier rejects these on actual mounted vnode data.
+The next image also contains an independently valid foreign CMS/root/leaf chain,
+verified with its own CA by OpenSSL but absent from the primary kernel pins.
+All four actual vnode files must be rejected during each native boot.
 Host fatal ASan/UBSan also tests real positive bytes, changed header/code/CMS,
 truncation and validity boundaries. Positive tests do not authorize untrusted
 input or prove EL0 before a genuine native kernel run.
@@ -79,8 +82,30 @@ handler return, and PID1/no-error return to EL0 after SVC. The program itself
 must compare that result and reach its success marker. Native cs_validate_page
 outputs must report validated, untainted, executable bytes. All observations
 use breakpoints/reads/steps only, with no debugger memory or register writes.
+Post-exec counters are sampled at the genuine getpid return in EL1, before the
+stock syscall handler restores EL0. The checker rejects EL0 kernel VA reads,
+inaccessible addresses and short replies without stale-data fallback. The real
+ubc_cs_blob_add return must separately report success.
+
+The public MASTER has the config_enforce_signed_code attribute but no options
+declaration. The board now supplies options CONFIG_ENFORCE_SIGNED_CODE through
+the original SETUP/config path. Local real generated OSFMK/BSD Makefiles contain
+-DCONFIG_ENFORCE_SIGNED_CODE; the unchanged kern_cs.c conditional preprocesses
+to process enforcement1, with a missing-option negative control producing0.
+This macro is in CONFIG_DEFINES, consumed by MakeInc.def, rather than a guessed
+generated-header name. The same actual generated Makefiles are checked in CI;
+only a new runtime readback1 with RO/NX can confirm enforcement in that kernel.
 
 This proves only the owned laboratory process when the native test passes.
 It is not Apple code-signing compatibility, a general CMS/AMFI implementation,
 launchd/system services, iOS or any physical UMS512 support. The physical phone
 remains strictly prohibited.
+
+Host certificate-boundary regression: tests/cms_chain_negative.c links the
+actual ums512_lab_codesign.c and pinned BearSSL sources, with a generated
+lab_exec_trust.h from the known asset's signing work. Arguments are known file,
+foreign-chain file and current epoch. It accepts the known asset, rejects
+changed root/leaf certificates and a separate cryptographically valid CMS chain
+made by another call to tools/lab_exec_assets.sign. Compile with fatal ASan/
+UBSan and the generated crypto include directory. Source/asset/result hashes
+are in lab-cms-host-validation.json. These are host checks, not EL0 evidence.

@@ -77,9 +77,9 @@ int ums512_lab_authorize_vnode(struct vnode *vp,struct cs_blob *blob)
 }
 void ums512_lab_vnode_negative_tests(void)
 {
-    static const char *const paths[]={"/sbin/unsigned-init","/sbin/altered-init","/sbin/bad-cms-init"};
+    static const char *const paths[]={"/sbin/unsigned-init","/sbin/altered-init","/sbin/bad-cms-init","/sbin/foreign-init"};
     vfs_context_t context=vfs_context_kernel();
-    for(unsigned i=0;i<3;i++) {
+    for(unsigned i=0;i<sizeof(paths)/sizeof(paths[0]);i++) {
         vnode_t vp=NULLVP;
         if(vnode_open(paths[i],FREAD,0,VNODE_LOOKUP_NOFOLLOW|VNODE_LOOKUP_NOCROSSMOUNT,&vp,context) ||
             !vp || ums512_lab_authorize_vnode(vp,NULL)!=EAUTH) panic("QEMU lab untrusted vnode accepted");
