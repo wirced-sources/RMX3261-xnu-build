@@ -576,7 +576,9 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
         required_gates=('UMS512HW: qualified physical handoff missing; M1 NO-GO',
                         'UMS512HW: missing/inconsistent clock observations',
                         'UMS512HW: secure delegation/ownership/state not acceptable')
-        if not all(s.encode()+b'\0' in data for s in required_gates):
+        # XNU_KERNEL_PRIVATE panic() appends the stock source-location format.
+        # Check the actual compiled format, not an impossible bare NUL suffix.
+        if not all(s.encode()+b' @%s:%d\0' in data for s in required_gates):
             raise ValueError('physical runtime refusal paths absent from final kernel')
         if any(n in symbols for n in ('_ums512_gic_init','RMXQemuPlatform','QemuRootStorage')):
             raise ValueError('QEMU backend leaked into physical kernel')
