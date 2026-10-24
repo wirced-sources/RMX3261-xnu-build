@@ -10,7 +10,6 @@ parser=argparse.ArgumentParser(description='Owned QEMU-only architectural PAN an
 parser.add_argument('--qemu',default=None);parser.add_argument('--clang',default=shutil.which('clang'))
 args=parser.parse_args()
 from xnu_kernel_qemu import extract_wrapper,symbols,RSP
-from qemu_smoke import qemu_path
 work=root/'out/native/icount-clock-probe';work.mkdir(exist_ok=True)
 source='''.section __TEXT,__text,regular,pure_instructions
 Lhead:
@@ -43,7 +42,7 @@ Lend:
 subprocess.run([args.clang,'-target','arm64-apple-macos11','-c',work/'probe.s','-o',work/'probe.o'],check=True)
 data=(work/'probe.o').read_bytes();blob=extract_wrapper(data);(work/'Image').write_bytes(blob);sym={'_pause':blob.index(struct.pack('<I',0xd2800000|(50000<<5)|1)),'_done':len(blob)-4}
 with socket.socket() as s:s.bind(('127.0.0.1',0));port=s.getsockname()[1]
-p=subprocess.Popen([(args.qemu or qemu_path()),'-machine','virt,virtualization=off','-cpu','cortex-a55','-m','512M','-smp','1','-nic','none','-display','none','-monitor','none','-serial','none','-accel','tcg,thread=single','-icount','shift=3,align=off,sleep=off','-rtc','base=utc,clock=vm','-S','-gdb',f'tcp:127.0.0.1:{port}','-device',f'loader,file={work / "Image"},addr=0x44000000,cpu-num=0,force-raw=on'],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+p=subprocess.Popen([(args.qemu or shutil.which('qemu-system-aarch64') or 'C:/Program Files/qemu/qemu-system-aarch64.exe'),'-machine','virt,virtualization=off','-cpu','cortex-a55','-m','512M','-smp','1','-nic','none','-display','none','-monitor','none','-serial','none','-accel','tcg,thread=single','-icount','shift=3,align=off,sleep=off','-rtc','base=utc,clock=vm','-S','-gdb',f'tcp:127.0.0.1:{port}','-device',f'loader,file={work / "Image"},addr=0x44000000,cpu-num=0,force-raw=on'],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
 try:
  for i in range(10):
   if p.poll() is not None:raise RuntimeError(p.stderr.read().decode())
@@ -63,4 +62,7 @@ try:
  virtual_time='TCG icount shift3 sleep=off RTC vm',guest_register_writes=False)
  assert (int(report['pan_model']['ID_AA64MMFR1_EL1'],16)>>20)&15 in (1,2,3)
  print(json.dumps(report,indent=2));(work/'result.json').write_text(json.dumps(report,indent=2)+'\n')
-finally:p.terminate();p.wait(timeout=5)
+finally:
+ p.terminate()
+ try:p.wait(timeout=5)
+ except subprocess.TimeoutExpired:p.kill();p.wait(timeout=5)

@@ -420,7 +420,7 @@ def virtual_cpu_binding(tree):
     return dict(count=1,physical_id=0,path=cpu.path)
 
 
-def execute(kernel, record, out, qemu, clang, userspace_manifest=None):
+def execute(kernel, record, out, qemu, clang, userspace_manifest=None, instruction_clock=False):
     data = kernel.read_bytes()
     report = audit(data, zero_slide_local_relocations=True)
     proof = json.loads(record.read_text())
@@ -438,8 +438,9 @@ def execute(kernel, record, out, qemu, clang, userspace_manifest=None):
             raise ValueError('genuine kernel symbol missing: ' + name)
     out.mkdir(parents=True, exist_ok=False)
     machine = 'virt,gic-version=3,virtualization=on'
-    base_cmd = [qemu, '-machine', machine, '-cpu', 'cortex-a55', '-smp', '1', '-m', '512M', '-nic', 'none',
-                '-accel','tcg,thread=single','-icount','shift=3,align=off,sleep=off','-rtc','base=utc,clock=vm']
+    base_cmd = [qemu, '-machine', machine, '-cpu', 'cortex-a55', '-smp', '1', '-m', '512M', '-nic', 'none']
+    if instruction_clock:
+        base_cmd+=['-accel','tcg,thread=single','-icount','shift=3,align=off,sleep=off','-rtc','base=utc,clock=vm']
     fdt_path = out/'qemu.dtb'
     subprocess.run([*base_cmd, '-machine', machine+',dumpdtb='+str(fdt_path), '-display','none'], check=True, capture_output=True, timeout=20)
     tree = FDT(fdt_path.read_bytes())
@@ -524,7 +525,7 @@ def execute(kernel, record, out, qemu, clang, userspace_manifest=None):
               'virtual_rtc_fdt_binding':rtc,
               'kernel_runtime_tests_requested':runtime_requested,
               'returned_init_functions':[]}
-    result['virtual_time_model']='TCG icount shift3, sleep=off, RTC clock=vm; stock guest watchdogs unchanged'
+    result['virtual_time_model']=('diagnostic TCG icount shift3/RTC vm' if instruction_clock else 'original QEMU virtual clock/RTC defaults as native57')+'; stock guest watchdogs unchanged'
     if lifecycle:
         result['userspace_lifecycle']=lifecycle.proof
     try:
@@ -624,9 +625,13 @@ def execute(kernel, record, out, qemu, clang, userspace_manifest=None):
                 try:
                     rsp.command('c')
                 except socket.timeout:
-                    conn.sendall(b'\x03')
-                    rsp.receive()
                     result['bounded_run_timeout'] = True
+                    conn.settimeout(5)
+                    conn.sendall(b'\x03')
+                    try:rsp.receive()
+                    except socket.timeout:
+                        result['guest_stop_request_failed']=True
+                        raise RuntimeError('QEMU did not acknowledge bounded debugger stop within5sec')
                 regs = rsp.registers()
                 name = boundaries.get(int(regs['pc'],16),'other stop')
                 if name.startswith('return:') and int(regs['sp'],16)!=return_sp.get(int(regs['pc'],16)):
@@ -1069,7 +1074,8 @@ if __name__ == '__main__':
     p.add_argument('--qemu',default=shutil.which('qemu-system-aarch64'))
     p.add_argument('--clang',default=shutil.which('clang'))
     p.add_argument('--userspace-manifest',type=Path)
+    p.add_argument('--instruction-clock',action='store_true',help='diagnostic only; not verified for full XNU')
     a=p.parse_args()
     if not a.qemu or not a.clang:
         p.error('real QEMU and Mach-O capable Clang are required')
-    execute(a.kernel.resolve(),a.record,a.out.resolve(),a.qemu,a.clang,a.userspace_manifest)
+    execute(a.kernel.resolve(),a.record,a.out.resolve(),a.qemu,a.clang,a.userspace_manifest,a.instruction_clock)
