@@ -82,6 +82,9 @@ def prepare(work, native=False):
                   'entry_regs.S':'ums512_entry_regs.s'}.get(name,name)
             shutil.copyfile(PLATFORM/name,target/dest)
         rewrite(target/'platform.h','../../../shim/ums512/xnu_boot.h','xnu_boot.h')
+        # Generated config ums512.h shadows bare UMS512.h on macOS's default
+        # case-insensitive filesystem. Keep the actual board header namespace.
+        rewrite(target/'ums512_abi.c','"UMS512.h"','<pexpert/arm64/UMS512.h>')
         shutil.copyfile(ROOT/'shim/ums512/xnu_boot.h',target/'xnu_boot.h')
         shutil.copyfile(ROOT/'shim/ums512/handoff.S',target/'ums512_handoff.s')
         facts(target)
