@@ -35,6 +35,8 @@ int ums512_validate_plan(const struct ums512_plan *p,
         if (!valid(regions[i]) || !inside(p->ram, regions[i]) ||
             regions[i].base % aligns[i] || regions[i].base + regions[i].size > p->top)
             return UMS512_RANGE;
+        /* The transfer uses the stack END as SP_EL1, not its aligned base. */
+        if (i==3 && (regions[i].base+regions[i].size)%16) return UMS512_RANGE;
         for (size_t j = 0; j < i; ++j)
             if (overlaps(regions[i], regions[j])) return UMS512_OVERLAP;
     }
@@ -101,10 +103,12 @@ int ums512_timer_ticks(uint64_t ns, uint32_t hz, uint64_t *ticks) {
 int ums512_entry_check(const struct ums512_entry_state *s) {
     if (!s || s->current_el != 4) return UMS512_UNSUPPORTED;
     /* Gate the proposed cold EL1 path; never silently inherit an MMU/cache setup. */
-    if (s->sctlr & ((1u << 0) | (1u << 2) | (1u << 12))) return UMS512_UNSUPPORTED;
+    /* XNU loads boot_args before setting its own SCTLR: reject EE as well. */
+    if (s->sctlr & ((1u << 0) | (1u << 2) | (1u << 12) | (1u << 25))) return UMS512_UNSUPPORTED;
     /* 16K granule: accept baseline 1 and LPA2 2; reject absent/unknown. */
     uint64_t granule = (s->mmfr0 >> 20) & 15;
-    if ((granule != 1 && granule != 2) || !s->cntfrq || s->cntfrq > UINT32_MAX)
+    /* Match XNU's Hz/1e6 divisor and the qualified hardware clock backend. */
+    if ((granule != 1 && granule != 2) || s->cntfrq < 1000000 || s->cntfrq > UINT32_MAX)
         return UMS512_UNSUPPORTED;
     return UMS512_OK;
 }

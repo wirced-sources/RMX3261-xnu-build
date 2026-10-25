@@ -19,6 +19,10 @@
     b.ne 3f
     tst x9, #0x1000                    /* I-cache off */
     b.ne 3f
+#if defined(UMS512_HARDWARE_TARGET) && UMS512_HARDWARE_TARGET
+    mov x12, #7
+    tbnz x9, #25, 3f                 /* EE: boot_args is little endian. */
+#endif
     mov x12, #3
     mrs x9, MIDR_EL1
     ubfx x10, x9, #24, #8

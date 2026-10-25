@@ -45,6 +45,8 @@ def profile(board):
         if len(node['reg']) != count: raise ValueError('wrong register bank count')
         return [extent(v) for v in node['reg']]
     gic, timer, psci = map(one, ('arm,gic-v3', 'arm,armv8-timer', 'arm,psci-0.2'))
+    if any(n['status'] not in ([], ['okay'], ['ok']) for n in (gic,timer,psci)):
+        raise ValueError('required GIC/timer/PSCI binding is unavailable')
     gr = regs(gic, 2)
     stride = gic['redistributor-stride']
     if gr != [(0x12000000, 0x12020000), (0x12040000, 0x12140000)] or stride != [0, 0x20000]:
@@ -58,6 +60,9 @@ def profile(board):
         ('secure_physical', 'nonsecure_physical', 'virtual', 'hypervisor'))}
     if [x['intid'] for x in timer_irqs.values()] != [29, 30, 27, 26] or any(t[i] != 4 for i in (2, 5, 8, 11)):
         raise ValueError('timer binding differs from pinned UMS512 source')
+    frequency=timer.get('clock-frequency')
+    if frequency is not None and (len(frequency)!=1 or type(frequency[0]) is not int or not 0<frequency[0]<=0xffffffff):
+        raise ValueError('invalid timer clock-frequency binding')
     cpus = []
     for c in board['cpus']:
         if len(c['mpidr']) != 1 or c['enable-method'] != ['psci'] or c['compatible'] not in (['arm,cortex-a55', 'arm,armv8'], ['arm,cortex-a75', 'arm,armv8']):
@@ -86,12 +91,14 @@ def profile(board):
     if any(not n['reg'] for n in board['reserved_memory']):
         raise ValueError('unresolved dynamic reservation: no allocatable RAM claim')
     for v in board['ram'] + reserved: extent(v)
-    return dict(scope='Offline descriptor from analysis-only allowlist, cross-checked with pinned public vendor source',
+    return dict(scope='Offline FDT hardware descriptor; launch state and ownership unverified',
+        evidence_source=board['source'],
         hardware_verified=False, m1='NO-GO', board_fdt_sha256=board['sha256'],
         gic=dict(distributor=hex(gr[0][0]), redistributors=hex(gr[1][0]),
                  redistributor_bytes=hex(gr[1][1]-gr[1][0]), stride=hex(0x20000),
                  maintenance=gic_irq(gic['interrupts']), security_state='UNVERIFIED; no controller writes permitted'),
-        timer=timer_irqs, cntfrq_hz=None, psci=dict(conduit='smc', runtime_version=None, cpu_on_verified=False),
+        timer=timer_irqs, timer_dt_frequency_hz=frequency[0] if frequency is not None else None,
+        cntfrq_hz=None, psci=dict(conduit='smc', runtime_version=None, cpu_on_verified=False),
         cpus=cpus, uart=dict(base=hex(ur[0]), size=hex(ur[1]-ur[0]), irq=gic_irq(uart['interrupts']),
             txd_offset=0, status_offset=12, tx_fifo_count_mask=0xff00, clocks_pins_baud_verified=False),
         emmc=dict(base='0x71400000', size='0x1000', bus_width=8, irq=gic_irq(emmc[0]['interrupts']),

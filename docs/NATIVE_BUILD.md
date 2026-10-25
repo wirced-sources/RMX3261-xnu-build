@@ -11,16 +11,17 @@ trust-cache, KPC, or crypto substitutes.
 
 UMS512HW is now a separate full-build target using this same pinned toolchain:
 `python3 tools/xnu_native.py --fetch --build --target ums512hw`. The hardware
-workflow never executes that image. Native Apple run40133458008 compiled the
-actual HW PE/core graph and reached strict ARM64 linking, blocked only by
-`_ums512_hw_clock_identify` and `_ums512_hw_irq_initialize`. No final HW kernel
-or new boot is claimed. Exact source/objects/config/link references and remaining
+workflow never executes that image. Native Apple run40138133493/source50e9274
+successfully linked/audited the full ARM64 MH_EXECUTE19734960B with real gated
+clock and GICv3 PPI27 backends:18segments,72350validated local relocations,
+0unresolved imports. SHA2561cdff41b3289092dc79e25a7ad1af4573a668e1b67b026e2bc0b3fb23040bbdf.
+No new hardware kernel boot is claimed. Exact source/objects/config/link references and remaining
 physical dependencies are in [UMS512HW_NATIVE_BUILD.md](UMS512HW_NATIVE_BUILD.md)
-and [ums512hw-native-validation.json](ums512hw-native-validation.json).
+and [ums512hw-clock-irq-validation.json](ums512hw-clock-irq-validation.json).
 The default/qemu target retains native61's separate path and security checks.
 After db4ffe9 both physical functions have real implementations with strict
 runtime handoff/state refusal. They do not invent clocks or write GIC security
-policy. Local OSFMK compilation passed; a new full Apple link is pending.
+policy. Local OSFMK compilation and the new full Apple link passed.
 The existing offline adapter emits no qualification contract. Details and
 limits are in UMS512_HW_BACKENDS.md; M1 remains NO-GO.
 

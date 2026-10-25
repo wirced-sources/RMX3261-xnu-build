@@ -11,9 +11,9 @@ def ranges(fdt, node):
             for a, s in fdt.physical(node)]
 
 
-def extract(data):
+def extract(data, *, source='strict FDT v17 input; acquisition provenance unverified'):
     f = FDT(data)
-    report = {"schema": 1, "source": "analysis-only reconstructed FDT",
+    report = {"schema": 1, "source": source,
               "sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data),
               "node_count": len(f.nodes), "ram": [], "reserved_memory": [],
               "memreserve": [{"base": hex(a), "size": hex(s)} for a, s in f.reservations],

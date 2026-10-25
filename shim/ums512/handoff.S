@@ -22,6 +22,8 @@ SYMBOL:
     mov x10, #0x1005
     tst x9, x10
     b.ne 1f
+    /* XNU reads little-endian boot_args before resetting SCTLR_EL1. */
+    tbnz x9, #25, 1f                 /* EE: EL1 data accesses must be LE. */
     cbz x0, 1f
     cbz x1, 1f
     cbz x2, 1f

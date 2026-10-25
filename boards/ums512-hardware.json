@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "source": "analysis-only reconstructed FDT",
+  "source": "verified saved Android root FDT 2026-10-25; byte-identical to prior reconstruction; launch state unverified",
   "sha256": "0600e5c6005656ea9b1b87c04601b5491f60277e4ee7f37829cc1cd738284fd8",
   "bytes": 283729,
   "node_count": 929,

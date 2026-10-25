@@ -45,6 +45,8 @@ def inspect_fdt(data):
     if len(data)>1024*1024: raise ValueError('oversized FDT')
     tree=FDT(data);board=extract(data);p=profile(board)
     gic=next(n for n in tree.nodes.values() if 'arm,gic-v3' in n.strings('compatible'))
+    if gic.props.get('interrupt-controller')!=b'':
+        raise ValueError('missing/invalid GIC interrupt-controller property')
     handle=gic.cells('phandle',gic.cells('linux,phandle',[]))
     if len(handle)!=1 or handle[0] in (0,0xffffffff) or gic.cells('#interrupt-cells') != [3]:
         raise ValueError('missing three-cell GIC interrupt parent')
@@ -56,6 +58,14 @@ def inspect_fdt(data):
     wanted=[gic,tree.nodes[board['stdout_node']]]
     wanted += [n for n in tree.nodes.values() if 'arm,armv8-timer' in n.strings('compatible') or
                ('sprd,sdhc-r11p1' in n.strings('compatible') and n.cells('bus-width')==[8])]
+    required=wanted+[n for n in tree.nodes.values() if n.strings('device_type') in (['cpu'],['memory']) or
+                     'arm,psci-0.2' in n.strings('compatible')]
+    for n in required:
+        current=n
+        while current is not None:
+            if current.strings('status') not in ([],['okay'],['ok']):
+                raise ValueError('required FDT node or ancestor is unavailable')
+            current=current.parent
     for n in wanted:
         if 'interrupts-extended' in n.props: raise ValueError('extended interrupts require separate binding review')
         current=n
@@ -65,14 +75,36 @@ def inspect_fdt(data):
     return board,p
 
 
+def capture_fdt(directory):
+    """Read one already saved verified capture, never ADB or a device tool."""
+    from rmx3261_analyze import analyze_capture
+    from rmx3261_collect import private_path
+    directory=private_path(directory)
+    result=analyze_capture(directory)
+    if result['mode']!='ADB_SERVER_SHELL_V2' or result['statuses'].get('fdt')!='OK':
+        raise ValueError('successful strict FDT from a saved live-format capture required')
+    manifest=json.loads((directory/'manifest.json').read_text(encoding='utf-8'))
+    row=next(r for r in manifest['results'] if r['id']=='fdt')
+    data=(directory/row['stdout']['file']).read_bytes()
+    if len(data)!=row['stdout']['bytes'] or hashlib.sha256(data).hexdigest()!=row['stdout']['sha256']:
+        raise ValueError('capture FDT changed after integrity validation')
+    if hashlib.sha256((directory/'manifest.json').read_bytes()).hexdigest()!=result['manifest_sha256']:
+        raise ValueError('capture manifest changed after integrity validation')
+    return data,dict(source='saved Android FDT with manifest/byte integrity verified',
+        manifest_sha256=result['manifest_sha256'],device_attestation=False)
+
+
 def inherited_initrd(data):
     """Address-only exclusion; never copy or export the inherited payload."""
-    chosen=FDT(data).nodes['/chosen'];names=('linux,initrd-start','linux,initrd-end')
+    tree=FDT(data);chosen=tree.nodes['/chosen'];names=('linux,initrd-start','linux,initrd-end')
     if not any(k in chosen.props for k in names):return []
     if not all(k in chosen.props and len(chosen.props[k]) in (4,8) for k in names):
         raise ValueError('incomplete/invalid inherited initrd range')
     start,end=(int.from_bytes(chosen.props[k],'big') for k in names)
     if end<=start:raise ValueError('inverted inherited initrd range')
+    ram=[(a,a+s) for n in tree.nodes.values() if n.strings('device_type')==['memory'] for a,s in tree.physical(n)]
+    if not any(a<=start and end<=b for a,b in ram):
+        raise ValueError('inherited initrd is outside a single declared RAM bank')
     return [dict(base=hex(start),size=hex(end-start))]
 
 
@@ -80,6 +112,7 @@ def cpu_gate(state, p):
     s={k:num(state[k]) for k in STATE_FIELDS}
     if s['current_el']!=4: raise ValueError('EL1 cold handoff required; EL2 normalization not verified')
     if s['sctlr']&0x1005: raise ValueError('MMU/D-cache/I-cache must be off at XNU entry')
+    if s['sctlr']&(1<<25): raise ValueError('little-endian EL1 data accesses required before XNU boot_args loads')
     core=(s['midr']>>4)&0xfff;aff=s['mpidr']&0xff00ffffff
     cpus={int(c['affinity'],0):0xd05 if c['core']=='arm,cortex-a55' else 0xd0a for c in p['cpus']}
     if (s['midr']>>24)&255!=0x41 or cpus.get(aff)!=core: raise ValueError('MIDR/affinity differs from target')
@@ -87,7 +120,10 @@ def cpu_gate(state, p):
         raise ValueError('16KiB granule/physical address range unsupported')
     if not 1<=(s['mmfr1']>>20)&15<=3 or s['ctr']&15!=4 or (s['ctr']>>16)&15!=4:
         raise ValueError('PAN/cache line policy unsupported')
-    if not 0<s['cntfrq']<=0xffffffff: raise ValueError('CNTFRQ is not a supported observed frequency')
+    # Match the physical clock backend and rtclock_usec_divisor=Hz/1e6.
+    if not 1000000<=s['cntfrq']<=0xffffffff: raise ValueError('CNTFRQ is not a supported observed frequency')
+    if p['timer_dt_frequency_hz'] is not None and p['timer_dt_frequency_hz']!=s['cntfrq']:
+        raise ValueError('timer clock-frequency disagrees with supplied CNTFRQ')
     return s,aff
 
 
@@ -129,12 +165,21 @@ def adapt(fdt_data=None, kernel_data=None, context=None, seed=None):
         structural_blockers=missing,approved_for_hardware=False,m1='NO-GO',
         hardware_blockers=['Recovery/secure policy/diagnostic channel unverified.',
             'Live ownership, cache/DMA/EL evidence and entropy provenance require physical qualification.',
-            'Physical GIC/timer/RTC/entropy/storage backends remain unavailable.',
+            'Clock/IRQ code requires qualified live clocks/timers/GIC; RTC/entropy/storage backends unavailable.',
             'Panic reservation and complete Platform Expert startup contract are unqualified.',
-            'Kernel source/profile/authenticity and upstream legacy PE clock defaults require qualification.'])
+            'Kernel source/profile/authenticity and platform clock-domain mappings require qualification.'])
     if fdt_data is not None:
         board,p=inspect_fdt(fdt_data)
         report['fdt_sha256']=hashlib.sha256(fdt_data).hexdigest()
+        history=json.loads((ROOT/'docs/m05-memory.json').read_text())['regions']
+        report['reservation_evidence']=dict(current_fdt_header_entries=len(board['memreserve']),
+            current_reserved_memory_nodes=len(board['reserved_memory']),
+            current_reserved_memory_ranges=sum(len(n['reg']) for n in board['reserved_memory']),
+            historical_stage_records=len(history),
+            historical_fdt_header_records=sum(r['name']=='memreserve' for r in history),
+            historical_reserved_memory_records=sum(r['name'].startswith('/reserved-memory/') for r in history),
+            historical_conditional_file_records=sum(r['name'].startswith('loader-file-only') for r in history),
+            simultaneous_allocations_proven=False)
     if missing: return report,None,None
     state,aff=cpu_gate(s,p)
     if type(seed) is not bytes or len(seed)!=64 or not any(seed): raise ValueError('64-byte seed required; no default entropy')
@@ -148,7 +193,6 @@ def adapt(fdt_data=None, kernel_data=None, context=None, seed=None):
         raise ValueError('Linux input handoff does not identify the supplied FDT')
     # Deny every supplied live object and both historical and current carveouts.
     extra=[dict(base=hex(a),size=hex(b-a)) for a,b in map(region,layout['live_exclusions'])]
-    history=json.loads((ROOT/'docs/m05-memory.json').read_text())['regions']
     baseline=json.loads((ROOT/'boards/ums512-hardware.json').read_text())
     extra += history+profile(baseline)['reserved']+inherited_initrd(fdt_data)
     extra += [dict(base=hex(fdt_pa),size=hex(len(fdt_data)))]
@@ -190,14 +234,19 @@ def adapt(fdt_data=None, kernel_data=None, context=None, seed=None):
 
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
-    for name in ('fdt','kernel','context','seed'):p.add_argument('--'+name,type=Path)
+    inp=p.add_mutually_exclusive_group()
+    inp.add_argument('--fdt',type=Path)
+    inp.add_argument('--fdt-capture',type=Path,help='existing private diagnostic capture; offline manifest/hash validation only')
+    for name in ('kernel','context','seed'):p.add_argument('--'+name,type=Path)
     p.add_argument('--out',type=Path,default=ROOT/'out/ums512-handoff')
     p.add_argument('--emit-data-only',action='store_true',help='ignored workspace data only, never a boot image')
     a=p.parse_args();a.out.resolve().relative_to((ROOT/'out').resolve())
     if any((a.out/name).exists() for name in ('device-tree.adt','boot_args.bin')):
         raise ValueError('existing handoff data retained; choose a fresh output directory')
-    report,adt,args=adapt(a.fdt.read_bytes() if a.fdt else None,a.kernel.read_bytes() if a.kernel else None,
+    data,provenance=capture_fdt(a.fdt_capture) if a.fdt_capture else (a.fdt.read_bytes() if a.fdt else None,None)
+    report,adt,args=adapt(data,a.kernel.read_bytes() if a.kernel else None,
         json.loads(a.context.read_text()) if a.context else None,a.seed.read_bytes() if a.seed else None)
+    if provenance is not None:report['fdt_acquisition']=provenance
     a.out.mkdir(parents=True,exist_ok=True)
     (a.out/'report.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8',newline='\n')
     if a.emit_data_only and adt is not None:
