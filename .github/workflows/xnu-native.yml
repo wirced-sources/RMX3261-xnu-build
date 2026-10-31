@@ -7,6 +7,11 @@ on:
         type: choice
         options: [qemu, ums512hw]
         default: qemu
+      host:
+        description: Standard public runner (Xcode15.4 remains mandatory)
+        type: choice
+        options: [macos-14, macos-15]
+        default: macos-14
 permissions:
   contents: read
 concurrency:
@@ -16,7 +21,7 @@ jobs:
   build:
     # Standard public-repository runner only; private/paid execution is refused.
     if: github.event.repository.private == false
-    runs-on: macos-14
+    runs-on: ${{ inputs.host || 'macos-14' }}
     timeout-minutes: 90
     env:
       DEVELOPER_DIR: /Applications/Xcode_15.4.app/Contents/Developer
@@ -25,6 +30,8 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+      - name: Verify pinned Xcode is available
+        run: python3 tools/m4_ci.py --probe-toolchain --out out/native/report/toolchain-availability.json
       - name: Build original XNU with Apple tools
         run: python3 tools/xnu_native.py --fetch --build --target "$XNU_BUILD_TARGET"
       - name: Prepare pinned QEMU host

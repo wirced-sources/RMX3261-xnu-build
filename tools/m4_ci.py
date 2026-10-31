@@ -4,9 +4,27 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import subprocess
 
 
 def sha(data):return hashlib.sha256(data).hexdigest()
+
+
+def probe_toolchain(out):
+    lock=json.loads((Path(__file__).resolve().parents[1]/'xnu/native.lock.json').read_bytes())['host']
+    developer=Path(lock['developer_dir'])
+    result=dict(required_xcode=lock['xcode'],developer_dir=str(developer),
+        developer_dir_present=developer.is_dir(),
+        installed_xcodes=sorted(p.name for p in Path('/Applications').glob('Xcode*.app')))
+    if developer.is_dir():
+        run=subprocess.run(['/usr/bin/xcodebuild','-version'],capture_output=True,text=True,
+            env={**os.environ,'DEVELOPER_DIR':str(developer)},timeout=30)
+        result.update(version=run.stdout.strip(),error=run.stderr.strip(),exit_code=run.returncode)
+    result['compatible']=result.get('exit_code')==0 and result.get('version','').startswith('Xcode '+lock['xcode']+'\n')
+    out=Path(out);out.parent.mkdir(parents=True,exist_ok=True)
+    out.write_text(json.dumps(result,indent=2)+'\n')
+    print(json.dumps(result,indent=2))
+    return result['compatible']
 
 
 def bind(kernel,root,manifest,trust):
@@ -78,8 +96,11 @@ def collect(report,executions,out):
 
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--report',type=Path,required=True)
-    p.add_argument('--execution',type=Path,action='append',required=True)
+    p.add_argument('--probe-toolchain',action='store_true')
+    p.add_argument('--report',type=Path)
+    p.add_argument('--execution',type=Path,action='append')
     p.add_argument('--out',type=Path,required=True)
     a=p.parse_args()
+    if a.probe_toolchain:raise SystemExit(0 if probe_toolchain(a.out) else 1)
+    if not a.report or not a.execution:p.error('--report and --execution required to collect a real run')
     raise SystemExit(0 if collect(a.report,a.execution,a.out) else 1)
