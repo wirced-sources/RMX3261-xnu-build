@@ -236,7 +236,7 @@ def compile_m2(directory, layout, adt, args, tag, original, macho_offset, macho_
     objects=[]
     for i,path in enumerate(paths):
         obj=directory/f'{i}.o';objects.append(obj)
-        subprocess.run([tool('clang','CLANG'),'--target=aarch64-none-elf',*FLAGS,'-fpie',
+        subprocess.run([tool('clang','CLANG'),'--target=aarch64-none-elf',*FLAGS,'-fpie','-fvisibility=hidden',
             '-ffunction-sections','-fdata-sections','-I',str(directory),'-I',str(ROOT/'shim/ums512'),
             '-I',str(PLATFORM),'-c',str(path),'-o',str(obj)],check=True,timeout=30)
     ld=directory/'link.ld'
@@ -248,6 +248,8 @@ def compile_m2(directory, layout, adt, args, tag, original, macho_offset, macho_
                     *map(str,objects),'-o',str(elf)],check=True,timeout=30)
     parsed=ELF(elf.read_bytes());sym=parsed.symbols()
     if parsed.entry!=stub or any(s==0 for _,s in sym.values()):raise ValueError('entry or unresolved shim symbol')
+    if any((s['name'].startswith('.got') or s['type'] in (4,6,9)) and s['size'] for s in parsed.sections):
+        raise ValueError('loader contains GOT/runtime relocations')
     blob=directory/'loader.bin'
     subprocess.run([tool('llvm-objcopy','LLVM_OBJCOPY'),'-O','binary',str(elf),str(blob)],check=True,timeout=30)
     code=blob.read_bytes();image_size=(sym['m2_end'][0]+4095)&-4096
@@ -265,7 +267,7 @@ def compile_m2(directory, layout, adt, args, tag, original, macho_offset, macho_
                                symbols={k:v[0] for k,v in sym.items() if k.startswith('m2_')})
 
 
-def build_m2(kernel, record, out):
+def build_m2(kernel, record, out, tag=None):
     """Offline diagnostic container using a retained genuine native kernel."""
     import secrets
     from macho_kernel import audit
@@ -293,7 +295,8 @@ def build_m2(kernel, record, out):
            if i.mnemonic=='bl' and int(i.op_str.lstrip('#'),16)==sym['_ums512_xnu_arm_init_checkpoint']]
     if not calls:raise ValueError('no direct checkpoint call in genuine arm_init')
     a,b,linux,capabilities=sources();layout,adt,args=m2_layout(data)
-    out.mkdir(parents=True);tag=secrets.token_hex(16)
+    tag=tag or secrets.token_hex(16);token(tag)
+    out.mkdir(parents=True)
     binary=compile_init(tag,out)
     entries=unpack_cpio(gzip.decompress(initramfs(binary)))
     members=[(n,v['mode'],v['data'],v['major'],v['minor']) for n,v in entries.items()]
@@ -322,7 +325,9 @@ def build_m2(kernel, record, out):
         expected_usb_serial='M1-'+tag+'-D',xnu_usb_driver=False,
         source_hashes={p:sha(ROOT/p) for p in ('shim/ums512/xnu_entry.S','shim/ums512/xnu_entry.c',
             'shim/ums512/xnu_loader.c','shim/ums512/xnu_loader.h','shim/ums512/handoff.S',
-            'xnu/platform/ums512/ums512_progress.c','xnu/platform/ums512/ums512_progress_return.S','standalone/init.c')})
+            'xnu/platform/ums512/ums512_progress.c','xnu/platform/ums512/ums512_progress_return.S','standalone/init.c',
+            'tools/xnu_physical.py','tools/m1_standalone.py','tools/boot_a_probe.py',
+            'xnu/platform/ums512/platform.c','xnu/platform/ums512/platform.h','shim/ums512/xnu_boot.h')})
     (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n',encoding='utf-8')
     return manifest
 
@@ -364,6 +369,7 @@ if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('action',choices=['build','verify','m2-build','m2-verify']);p.add_argument('--out',type=Path,default=DEFAULT)
     p.add_argument('--kernel',type=Path);p.add_argument('--record',type=Path)
+    p.add_argument('--tag',help='explicit nonce for byte-identical OFFLINE reproduction; fresh nonce is the default')
     a=p.parse_args()
-    result=build_m2(a.kernel,a.record,a.out) if a.action=='m2-build' else verify_m2(a.out) if a.action=='m2-verify' else build(a.out) if a.action=='build' else verify(a.out)
+    result=build_m2(a.kernel,a.record,a.out,a.tag) if a.action=='m2-build' else verify_m2(a.out) if a.action=='m2-verify' else build(a.out) if a.action=='build' else verify(a.out)
     print(json.dumps(result,indent=2))

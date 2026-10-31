@@ -50,17 +50,44 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: 1
           HOMEBREW_NO_ANALYTICS: 1
         run: |
+          set -o pipefail
           if [ -f out/native/report/kernel-audit.json ]; then
             QEMU_BIN="$PWD/out/native/qemu-host/build/qemu-system-aarch64"
             "$QEMU_BIN" --version
             XNU_BOOT_STATUS=0
             for XNU_BOOT_TRIAL in 1 2; do
-              python3 tools/xnu_kernel_qemu.py out/native/report/kernel.development.ums512.macho --record out/native/report/kernel-audit.json --userspace-manifest out/native/report/userspace.json --out "out/native/kernel-qemu-$XNU_BOOT_TRIAL" --qemu "$QEMU_BIN" --clang "$(xcrun --find clang)" 2>&1 || XNU_BOOT_STATUS=1
+              python3 tools/xnu_kernel_qemu.py out/native/report/kernel.development.ums512.macho --record out/native/report/kernel-audit.json --userspace-manifest out/native/report/userspace.json --out "out/native/kernel-qemu-$XNU_BOOT_TRIAL" --qemu "$QEMU_BIN" --clang "$(xcrun --find clang)" 2>&1 | tee "out/native/kernel-qemu-$XNU_BOOT_TRIAL.stdout.log" || XNU_BOOT_STATUS=1
             done
             exit "$XNU_BOOT_STATUS"
           else
             echo 'QEMU NOT RUN: native kernel has not passed its strict audit'
+            exit 1
           fi
+      - name: Collect strict M4 EL0 result
+        if: always() && inputs.target != 'ums512hw'
+        run: |
+          python3 tools/m4_ci.py --report out/native/report --execution out/native/kernel-qemu-1/execution.json --execution out/native/kernel-qemu-2/execution.json --out out/native/m4/result.json
+      - name: Retain M4 kernel assets and execution evidence
+        if: always() && inputs.target != 'ums512hw'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: m4-el0-${{ github.sha }}
+          path: |
+            out/native/report/*.json
+            out/native/report/*.log
+            out/native/report/kernel.development.ums512.macho
+            out/native/report/root.hfs
+            out/native/report/lab_exec_trust.h
+            out/native/report/lab-root.pem
+            out/native/report/lab-leaf.pem
+            out/native/report/lab-cert.cnf
+            out/native/kernel-qemu-*/*.json
+            out/native/kernel-qemu-*/*.log
+            out/native/kernel-qemu-*.stdout.log
+            out/native/m4/*.json
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
       - name: Retain audited physical kernel and provenance
         if: always() && inputs.target == 'ums512hw' && hashFiles('out/native/report-hardware/kernel-audit.json') != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

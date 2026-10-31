@@ -6,13 +6,18 @@ INIT_LABELS=('init_pid','file_read','closed_read','parent_forked','parent_waited
              'parent_reaped','parent_unmapped','parent_done','cow_child','unsigned_exec_denied',
              'altered_exec_denied','init_fail')
 CHILD_LABELS=('child_pid','child_parent','child_file_read','child_pipe_written','child_exit','child_fail')
+M4_DENIAL_LABELS=('bad_cms_exec_denied','foreign_exec_denied')
 
 
 class UserLifecycle:
     def __init__(self, manifest):
-        if manifest.get('profile')!='process-lifecycle-v1':raise ValueError('unknown userspace profile')
+        profile=manifest.get('profile')
+        if profile not in ('process-lifecycle-v1','process-lifecycle-v2'):raise ValueError('unknown userspace profile')
+        self.init_labels=INIT_LABELS+(M4_DENIAL_LABELS if profile=='process-lifecycle-v2' else ())
+        self.exec_denials=('unsigned_exec_denied','altered_exec_denied')+(M4_DENIAL_LABELS if profile=='process-lifecycle-v2' else ())
+        self.expected_denials=4+len(self.exec_denials) # Four early vnode tests, then real execve calls.
         self.boundaries={};self.proof={'events':[]};self.manifest=manifest
-        for image,labels,base in ((manifest,INIT_LABELS,0x100000000),(manifest['child'],CHILD_LABELS,0x110000000)):
+        for image,labels,base in ((manifest,self.init_labels,0x100000000),(manifest['child'],CHILD_LABELS,0x110000000)):
             if image['identifier']!='org.rmx.qemu.'+('init' if image is manifest else 'child'):
                 raise ValueError('unexpected controlled signing identifier')
             entries={k:int(image['labels']['_lab_'+k],16) for k in labels}
@@ -35,6 +40,7 @@ class UserLifecycle:
         def require(ok,message):
             if not ok:raise RuntimeError('user lifecycle: '+message)
         if reg('cpsr')&15:raise RuntimeError('owned program marker must execute in EL0')
+        require(self.boundaries.get(reg('pc'))=='user:'+name,'PC does not match authenticated image boundary')
         if name not in ('entry_init','entry_child','init_pid','child_pid'):
             require(not reg('sp')&15,'userspace stack must be 16-byte aligned after startup')
         event=dict(marker=name,pc=regs['pc'],cpsr=regs['cpsr'])
@@ -66,7 +72,9 @@ class UserLifecycle:
             require(mapping.get('valid') and mapping.get('unprivileged_execute_never'),'data mapping must be NX')
             p[name]=dict(pid=pid,va=regs['x19'],value=value,ttbr0=system['TTBR0_EL1'],mapping=mapping)
             event.update(p[name])
-        elif name in ('unsigned_exec_denied','altered_exec_denied'):
+        elif name in self.exec_denials:
+            require(memory(reg('pc')-8,8)==struct.pack('<II',0xd2800770,0xd4001001),
+                    'denial must follow actual mov x16,#59 / svc #0x80')
             require(error and reg('x0')==80,'actual execve did not reject EAUTH');p[name]=True;event['errno']=80
         elif name=='child_pipe_written':
             require(not error and reg('x0')==16,'child pipe write failed');p[name]=True
@@ -93,7 +101,7 @@ class UserLifecycle:
 
     def validate(self):
         p=self.proof
-        required=set(INIT_LABELS+CHILD_LABELS)-{'init_fail','child_fail','parent_done'}
+        required=set(self.init_labels+CHILD_LABELS)-{'init_fail','child_fail','parent_done'}
         if not all(p.get(n) for n in required) or not p.get('entry_init') or not p.get('entry_child'):
             raise RuntimeError('incomplete real userspace lifecycle observations')
         pid=p['child_pid']

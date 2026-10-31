@@ -179,6 +179,18 @@ _lab_altered_exec_denied:
  b.cc L_fail
  cmp x0,#80
  b.ne L_fail
+ EXEC L_bad_cms
+.globl _lab_bad_cms_exec_denied
+_lab_bad_cms_exec_denied:
+ b.cc L_fail
+ cmp x0,#80
+ b.ne L_fail
+ EXEC L_foreign
+.globl _lab_foreign_exec_denied
+_lab_foreign_exec_denied:
+ b.cc L_fail
+ cmp x0,#80
+ b.ne L_fail
  EXEC L_child
  b L_fail
 .globl _lab_init_fail
@@ -190,4 +202,6 @@ L_root: .asciz "/root-proof.txt"
 L_child: .asciz "/sbin/lab-child"
 L_unsigned: .asciz "/sbin/unsigned-child"
 L_altered: .asciz "/sbin/altered-child"
+L_bad_cms: .asciz "/sbin/bad-cms-init"
+L_foreign: .asciz "/sbin/foreign-init"
 L_expected: .ascii "Owned QEMU laboratory data; no Apple userland.\n"

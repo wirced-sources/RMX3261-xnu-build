@@ -113,7 +113,7 @@ authorityKeyIdentifier=keyid,issuer
         result.update(leaf_sha256=hashlib.sha256(leaf_der).hexdigest(),root_sha256=hashlib.sha256(root_der).hexdigest(),
             laboratory_only=True,private_keys_exported=False,apple_userland=False,
             syscall="Darwin ARM64 fork/execve/exit/wait4, fd IO, pipe, mmap/munmap",
-            unsigned_fixture=unsigned,child=child,profile="process-lifecycle-v1")
+            unsigned_fixture=unsigned,child=child,profile="process-lifecycle-v2")
         if include_foreign:
             # A genuine independently valid chain, deliberately absent from
             # the primary kernel pins. Its private keys are also discarded.
@@ -176,7 +176,12 @@ int main(int argc,char **argv) {
     subprocess.run(args,check=True,timeout=120)
     negatives=[asset.parent/n for n in ('unsigned-init','altered-init','bad-cms-init','foreign-init','unsigned-child','altered-child')]
     if not all(p.is_file() for p in negatives):raise ValueError('missing actual untrusted CMS fixtures')
-    command([*(['wsl','-d','Ubuntu','--exec'] if platform.system()=='Windows' else []),path(binary),path(asset),str(int(time.time())),
-             *map(path,negatives)])
-    command([*(['wsl','-d','Ubuntu','--exec'] if platform.system()=='Windows' else []),path(binary),path(asset.parent/'lab-child'),str(int(time.time())),*map(path,negatives)])
+    now=int(time.time())
+    positives=[asset,asset.parent/'lab-child']
+    for positive in positives:
+        command([*(['wsl','-d','Ubuntu','--exec'] if platform.system()=='Windows' else []),path(binary),path(positive),str(now),*map(path,negatives)])
     print('CMS/CodeDirectory two signed images and six negative assets actual host verifier PASS',flush=True)
+    return dict(scope='actual host C verifier; no EL0 execution',sanitizers=sanitize,epoch=now,
+        accepted={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in positives},
+        rejected={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in negatives},
+        altered_byte_checks=14,truncation_checks=2,invalid_time_checks=4)

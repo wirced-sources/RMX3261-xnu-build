@@ -1,5 +1,9 @@
 # Owned ARM64 process lifecycle on genuine XNU
 
+Current M4 preparation emits `process-lifecycle-v2`, adding damaged-CMS and
+foreign-chain execve denials; its new runtime is unmeasured. See [M4_EL0.md](M4_EL0.md)
+for focused host results and runtime blockers. The native61 results below are v1.
+
 Native61/run40122405101 passed full Apple make install/audit and two independent
 QEMU boots of one real kernel, implementation11e81ad from native57/fa92bd8.
 Kernel SHA256 efd1fa07756968946d584d7cf89a804ca1a47ab2719e58532e307b05b37f5bef.

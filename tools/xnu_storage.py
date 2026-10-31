@@ -359,7 +359,7 @@ def image(xnu,clang,ld):
     from lab_exec_assets import sign,check
     executable=sign(target,staging,clang,ld)
     shutil.copyfile(target/'lab-signing/lab_exec_trust.h',xnu/'libkern/ums512/lab_exec_trust.h')
-    check(xnu/'libkern/ums512',xnu/'libkern/ums512',staging/'sbin/launchd',clang,sanitize=True)
+    signing_checks=check(xnu/'libkern/ums512',xnu/'libkern/ums512',staging/'sbin/launchd',clang,sanitize=True)
     dmg, raw = target/'root.dmg', target/'root.cdr'
     if dmg.exists() or raw.exists():
         raise ValueError('refusing to overwrite a root image')
@@ -385,4 +385,5 @@ def image(xnu,clang,ld):
     return {'bytes':len(data), 'sha256':sha.hex(), 'format':'HFS+',
             'content':'owned CMS-signed ARM64 getpid init plus unsigned/altered/CMS-negative assets',
             'executable_fixture':executable,
+            'host_code_signing_checks':signing_checks,
             'geometry':geometry, 'embedded_in_kernel':True, 'readonly':True, 'apple_trust':False}

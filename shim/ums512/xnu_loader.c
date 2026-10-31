@@ -114,6 +114,14 @@ int ums512_xnu_load_and_enter(const struct ums512_load_request *r)
     result=ums512_xnu_validate_load(r);
     if (result) return result;
     __asm__ volatile("msr DAIFSet, #15":::"memory");
+    /* This entire validated window is disposable, firmware-free RAM. With
+     * M=C=0 invalidate stale destination lines BEFORE writing, so enabling
+     * XNU's D-cache cannot resurrect old bootloader bytes. Never invalidate
+     * caller/source/FDT lines: validation proved those are disjoint.
+     */
+    for (uint64_t p=r->plan.ram.base;p<r->plan.ram.base+r->plan.ram.size;p+=64)
+        __asm__ volatile("dc ivac, %0"::"r"(p):"memory");
+    __asm__ volatile("dsb sy":::"memory");
     for (size_t i=0;i<r->segment_count;i++) {
         const struct ums512_load_segment *p=&r->segments[i];
         copy(p->pa,r->file+p->file_offset,p->file_bytes);

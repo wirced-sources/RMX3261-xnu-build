@@ -433,6 +433,11 @@ def execute(kernel, record, out, qemu, clang, userspace_manifest=None, instructi
     if userspace_manifest:
         from user_lifecycle import UserLifecycle
         lifecycle=UserLifecycle(json.loads(Path(userspace_manifest).read_text()))
+        if lifecycle.manifest['profile']=='process-lifecycle-v2':
+            from m4_ci import verify
+            verify(data,proof,Path(userspace_manifest).read_bytes())
+        for name in ('_ums512_root_image','_ums512_root_image_end','_ums512_lab_exec_proof','_cs_process_enforcement_enable'):
+            if name not in sym:raise ValueError('signed EL0 profile requires QEMU root/signing kernel symbol: '+name)
     for name in ('_arm_init', '_arm_vm_init', '_kernel_bootstrap', '_panic'):
         if name not in sym:
             raise ValueError('genuine kernel symbol missing: ' + name)
@@ -527,6 +532,7 @@ def execute(kernel, record, out, qemu, clang, userspace_manifest=None, instructi
               'returned_init_functions':[]}
     result['virtual_time_model']=('diagnostic TCG icount shift3/RTC vm' if instruction_clock else 'original QEMU virtual clock/RTC defaults as native57')+'; stock guest watchdogs unchanged'
     if lifecycle:
+        result['userspace_profile']=lifecycle.manifest['profile']
         result['userspace_lifecycle']=lifecycle.proof
     try:
         deadline = time.monotonic()+10
@@ -989,7 +995,7 @@ def execute(kernel, record, out, qemu, clang, userspace_manifest=None, instructi
                         raise RuntimeError('fresh post-exec EL1 counters were not observed')
                     if result.get('native_signature_attachment_returns')!=([0,0] if lifecycle else [0]):
                         raise RuntimeError('native signature attachment did not return success')
-                    if lab.get('exec_allowed')!=(2 if lifecycle else 1) or lab.get('signature_allowed',0)<(2 if lifecycle else 1) or lab.get('files_verified',0)<(6 if lifecycle else 2) or lab.get('vnode_negative_tests')!=4 or lab.get('denials')!=(6 if lifecycle else 4):
+                    if lab.get('exec_allowed')!=(2 if lifecycle else 1) or lab.get('signature_allowed',0)<(2 if lifecycle else 1) or lab.get('files_verified',0)<(6 if lifecycle else 2) or lab.get('vnode_negative_tests')!=4 or lab.get('denials')!=(lifecycle.expected_denials if lifecycle else 4):
                         raise RuntimeError('real CMS/CD signature attachment or untrusted vnode rejection not confirmed')
                     page=result.get('native_code_page_validation',{})
                     if not page.get('validated') or page.get('tainted') or page.get('nx'):
@@ -999,6 +1005,8 @@ def execute(kernel, record, out, qemu, clang, userspace_manifest=None, instructi
                         if not lifecycle.proof.get('complete'):raise RuntimeError('owned process lifecycle not completed')
                         entries={e['function'] for e in lifecycle.proof.get('kernel_entries',[])}
                         if not {'_fork','_execve','_wait4','_exit'}<=entries:raise RuntimeError('native lifecycle syscall handlers not observed')
+                        if sum(e['function']=='_execve' for e in lifecycle.proof['kernel_entries'])!=len(lifecycle.exec_denials)+1:
+                            raise RuntimeError('each denied exec and successful child exec needs a native execve entry')
                         vnodes=set(result.get('native_attachment_vnodes',[]))
                         pages=result.get('native_code_page_validations',[])
                         if len(vnodes)!=2 or not vnodes<={p['vnode'] for p in pages if p['validated'] and not p['tainted'] and not p['nx']}:

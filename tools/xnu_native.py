@@ -84,7 +84,7 @@ CAPSULE = (
     "xnu/platform/ums512/ums512_hfs_keys.h", "xnu/platform/ums512/ums512_hfs_keys.inc",
     "tests/test_root_image.py", "tools/qemu_user_fixture.py", "tests/test_user_fixture.py",
     "tools/lab_exec_assets.py", "xnu/platform/ums512/ums512_lab_codesign.h",
-    "xnu/userspace/lab_init.s", "xnu/userspace/lab_child.s", "tools/user_lifecycle.py",
+    "xnu/userspace/lab_init.s", "xnu/userspace/lab_child.s", "tools/user_lifecycle.py", "tools/m4_ci.py",
     "xnu/platform/ums512/ums512_lab_codesign.c", "xnu/platform/ums512/ums512_lab_vnode.c",
     "xnu/platform/ums512/ums512_rootfs_test.c",
     "tools/xnu_pthread.py", "xnu/platform/ums512/ums512_pthread.c",
@@ -496,6 +496,13 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
         image_proof=storage_image(src,tools['clang'],tools['ld'])
         (report/'root-image.json').write_text(json.dumps(image_proof,indent=2)+'\n')
         (report/'userspace.json').write_text(json.dumps(image_proof['executable_fixture'],indent=2)+'\n')
+        storage=src/'iokit/ums512_storage'
+        for origin,name in ((storage/'root.hfs','root.hfs'),
+            (src/'libkern/ums512/lab_exec_trust.h','lab_exec_trust.h'),
+            (storage/'lab-signing/root.pem','lab-root.pem'),
+            (storage/'lab-signing/leaf.pem','lab-leaf.pem'),
+            (storage/'lab-signing/cert.cnf','lab-cert.cnf')):
+            shutil.copyfile(origin,report/name)
         print('ROOT IMAGE: '+json.dumps(image_proof),flush=True)
     run(["make", "installhdrs", "-j2", *native], "xnu-headers", report, env, src)
     xbuild("Libsystem", "installhdrs", ["FAKEROOT_DIR=" + str(fake)])
@@ -568,6 +575,10 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
     result.update(kernel_linked=True, arm_init_executed=False, hardware_verified=False,
                   source_commit=specs()[1]["xnu"]["commit"], diagnostic_observer_included=False,
                   upstream_install_succeeded=make_error is None)
+    if not hardware:
+        from m4_ci import bind
+        result['m4_assets']=bind(data,(report/'root.hfs').read_bytes(),
+            (report/'userspace.json').read_bytes(),(report/'lab_exec_trust.h').read_bytes())
     if hardware:
         # Observe symbols/strings in the strict, unmodified link result. Private
         # functions may be inlined by LTO; object provenance is recorded above.
