@@ -62,15 +62,15 @@ jobs:
             echo 'QEMU NOT RUN: native kernel has not passed its strict audit'
           fi
       - name: Retain audited physical kernel and provenance
-        if: always() && inputs.target == 'ums512hw' && hashFiles('out/native/report/kernel-audit.json') != ''
+        if: always() && inputs.target == 'ums512hw' && hashFiles('out/native/report-hardware/kernel-audit.json') != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ums512hw-kernel-${{ github.sha }}
           path: |
-            out/native/report/kernel.development.ums512hw.macho
-            out/native/report/kernel-audit.json
-            out/native/report/code-signing-config.json
-            out/native/report/object-inventory.json
+            out/native/report-hardware/kernel.development.ums512hw.macho
+            out/native/report-hardware/kernel-audit.json
+            out/native/report-hardware/code-signing-config.json
+            out/native/report-hardware/object-inventory.json
           if-no-files-found: error
           retention-days: 7
           compression-level: 0

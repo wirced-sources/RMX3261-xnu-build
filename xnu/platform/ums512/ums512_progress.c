@@ -59,9 +59,9 @@ static uint64_t return_address(const char *s, size_t n)
     }
     return found==1 && value>=0x80080000 && value<0x81f00000 && !(value&3) ? value : 0;
 }
-__attribute__((noinline)) void ums512_xnu_arm_init_checkpoint(const void *opaque)
+__attribute__((noinline)) void ums512_xnu_arm_init_checkpoint(void *opaque)
 {
-    const struct xnu_boot_args *args=opaque;
+    struct xnu_boot_args *args=opaque;
     if (!args || ums512_xnu_progress_parse(&ums512_xnu_progress,args->command_line,sizeof(args->command_line))) return;
     uint64_t el;
     __asm__ volatile("mrs %0, CurrentEL":"=r"(el));

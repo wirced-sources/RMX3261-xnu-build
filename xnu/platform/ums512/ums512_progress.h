@@ -9,4 +9,4 @@ struct ums512_xnu_progress {
 };
 extern volatile struct ums512_xnu_progress ums512_xnu_progress;
 int ums512_xnu_progress_parse(volatile struct ums512_xnu_progress *, const char *, size_t);
-void ums512_xnu_arm_init_checkpoint(const void *);
+void ums512_xnu_arm_init_checkpoint(void *);

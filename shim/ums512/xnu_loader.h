@@ -21,4 +21,6 @@ struct ums512_load_request {
     struct ums512_load_segment segments[UMS512_LOADER_MAX_SEGMENTS];
 };
 int ums512_xnu_validate_load(const struct ums512_load_request *);
+/* Parse the signed file itself. Preferred VA only; never apply a slide/fixup. */
+int ums512_xnu_macho_segments(struct ums512_load_request *);
 int ums512_xnu_load_and_enter(const struct ums512_load_request *);

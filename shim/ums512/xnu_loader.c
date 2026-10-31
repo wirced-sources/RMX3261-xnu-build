@@ -6,6 +6,49 @@ static int contained(uint64_t base, uint64_t size, uint64_t p, uint64_t n)
 static int disjoint(uint64_t a, uint64_t n, uint64_t b, uint64_t m)
 { return a <= UINT64_MAX-n && b <= UINT64_MAX-m && (a+n <= b || b+m <= a); }
 
+static uint32_t le32(const unsigned char *p)
+{ return (uint32_t)p[0]|((uint32_t)p[1]<<8)|((uint32_t)p[2]<<16)|((uint32_t)p[3]<<24); }
+static uint64_t le64(const unsigned char *p)
+{ return le32(p)|((uint64_t)le32(p+4)<<32); }
+int ums512_xnu_macho_segments(struct ums512_load_request *r)
+{
+    if (!r || !r->file || r->file_bytes<32) return UMS512_INVALID;
+    const unsigned char *f=r->file;
+    if (le32(f)!=0xfeedfacf || le32(f+4)!=0x100000c || le32(f+8) ||
+        le32(f+12)!=2 || le32(f+28)) return UMS512_UNSUPPORTED;
+    uint64_t count=le32(f+16),end=32+(uint64_t)le32(f+20),at=32,entry=0;
+    if (!count || count>256 || end>r->file_bytes) return UMS512_RANGE;
+    r->segment_count=0;
+    for (uint64_t i=0;i<count;i++) {
+        if (!contained(0,end,at,8)) return UMS512_RANGE;
+        uint32_t cmd=le32(f+at),len=le32(f+at+4);
+        if (len<8 || (len&7) || !contained(0,end,at,len)) return UMS512_RANGE;
+        if (cmd==0x19) {
+            if (len<72 || (uint64_t)len!=72+80*(uint64_t)le32(f+at+64)) return UMS512_INVALID;
+            uint64_t va=le64(f+at+24),mem=le64(f+at+32),off=le64(f+at+40),n=le64(f+at+48);
+            uint32_t max=le32(f+at+56),prot=le32(f+at+60);
+            if ((va|mem|off)&0x3fff || n>mem || max>7 || (prot&~max) || (prot&6)==6 ||
+                !contained(0,r->file_bytes,off,n)) return UMS512_RANGE;
+            if (mem && prot) {
+                if (!contained(r->plan.virt_base,r->plan.ram.size,va,mem) ||
+                    r->segment_count==UMS512_LOADER_MAX_SEGMENTS) return UMS512_RANGE;
+                r->segments[r->segment_count++]=(struct ums512_load_segment){
+                    r->plan.ram.base+va-r->plan.virt_base,off,n,mem,prot};
+            }
+        } else if (cmd==5) {
+            if (entry || len!=288 || le32(f+at+8)!=6 || le32(f+at+12)!=68) return UMS512_INVALID;
+            entry=le64(f+at+272);
+        } else if (cmd==0xc || cmd==0xe || cmd==0x18 || cmd==0x80000018 ||
+                   cmd==0x8000001f || cmd==0x80000023 || cmd==0x20 ||
+                   cmd==0x80000028 || cmd==0x80000034 || cmd==0x80000035) return UMS512_UNSUPPORTED;
+        at+=len;
+    }
+    if (at!=end || !entry || (entry&3) || !contained(r->plan.virt_base,r->plan.ram.size,entry,4))
+        return UMS512_RANGE;
+    r->entry_pa=r->plan.ram.base+entry-r->plan.virt_base;
+    return UMS512_OK;
+}
+
 int ums512_xnu_validate_load(const struct ums512_load_request *r)
 {
     if (!r || !r->file || !r->args || !r->adt || r->qualified != UMS512_LOADER_OWNERSHIP ||
@@ -79,6 +122,10 @@ int ums512_xnu_load_and_enter(const struct ums512_load_request *r)
     }
     copy(r->plan.adt.base,r->adt,r->plan.adt.size);
     copy(r->plan.args.base,(const unsigned char *)r->args,sizeof(*r->args));
+    /* Linux's entry contract has caches off, but writes still need completion
+     * and stale instruction lines must be invalidated before fetching XNU.
+     */
+    __asm__ volatile("dsb sy\n ic iallu\n dsb sy\n isb":::"memory");
     extern int ums512_handoff_el1(uint64_t,uint64_t,uint64_t);
     return ums512_handoff_el1(r->entry_pa,r->plan.args.base,r->plan.stack.base+r->plan.stack.size);
 }
