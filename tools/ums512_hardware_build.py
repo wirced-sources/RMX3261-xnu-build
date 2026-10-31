@@ -94,10 +94,12 @@ def prepare(work, native=False):
         shutil.copyfile(ROOT/'shim/ums512/xnu_boot.h',target/'xnu_boot.h')
         shutil.copyfile(ROOT/'shim/ums512/handoff.S',target/'ums512_handoff.s')
         facts(target)
+        from xnu_physical import install_progress
+        install_progress(src)
         with (src/'osfmk/conf/files.arm64').open('a',newline='\n') as stream:
             stream.write('\nOPTIONS/ums512_hardware_source\toptional ums512_hardware_source\n')
             for name in ('ums512_platform.c','ums512_diag.c','ums512_abi.c','ums512_entry_regs.s','ums512_handoff.s',
-                         'ums512_hw_clock.c','ums512_hw_irq.c','ums512_hw_policy.c'):
+                         'ums512_hw_clock.c','ums512_hw_irq.c','ums512_hw_policy.c','ums512_progress.c','ums512_progress_return.s'):
                 stream.write(f'\nosfmk/ums512/{name}\toptional ums512_hardware_source\n')
         from xnu_crypto import install as install_crypto
         install_crypto(src)
@@ -143,7 +145,7 @@ def prepare(work, native=False):
         if '-DUMS512_HARDWARE_TARGET' not in makefile: raise ValueError('hardware option not materialized')
         if native:
             for name in ('ums512_platform','ums512_diag','ums512_abi','ums512_entry_regs','ums512_handoff',
-                         'ums512_hw_clock','ums512_hw_irq','ums512_hw_policy'):
+                         'ums512_hw_clock','ums512_hw_irq','ums512_hw_policy','ums512_progress'):
                 if name+'.o' not in makefile:raise ValueError('missing native hardware object '+name)
         report['enforcement_config']=enforcement_probe(makefile,(src/'bsd/kern/kern_cs.c').read_text(),[tool('clang','CLANG')])
         report['generated_headers']={p.name:sha(p) for p in generated.glob('*.h')}

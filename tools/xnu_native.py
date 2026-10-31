@@ -56,6 +56,10 @@ PATCHES = (
     "xnu/patches/0005-non-pac-build-fixes.patch",
 )
 CAPSULE = (
+    "tools/xnu_physical.py", "shim/ums512/xnu_loader.c", "shim/ums512/xnu_loader.h",
+    "xnu/platform/ums512/ums512_progress.c", "xnu/platform/ums512/ums512_progress.h",
+    "xnu/platform/ums512/ums512_progress_return.S",
+    "xnu/platform/ums512/ums512_frame.c", "xnu/platform/ums512/ums512_frame.h",
     "tools/ums512_hardware_build.py", "tools/ums512_handoff.py", "tools/ums512_target.py",
     "tools/extract_hardware.py", "tools/build.py", "tools/elf.py", "tools/logdecode.py",
     "tools/xnu_build.py", "tools/xnu_sources.py", "tools/xnu_host.py",
@@ -533,7 +537,7 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
             "ipc_kmsg", "mach_msg", "device_tree", "OSObject", "IOService")}
         platform_objects={n:h for n,h in objects.items() if Path(n).stem in ('UMS512HardwarePlatform',
             'ums512_platform','ums512_diag','ums512_abi','ums512_entry_regs','ums512_handoff',
-            'ums512_hw_clock','ums512_hw_irq','ums512_hw_policy','pe_fiq','pe_identify_machine')}
+            'ums512_hw_clock','ums512_hw_irq','ums512_hw_policy','ums512_progress','pe_fiq','pe_identify_machine')}
         for name,record in platform_objects.items():
             nm=subprocess.run([tools['nm'],'-u',str(target/name)],capture_output=True,text=True,timeout=30)
             record['undefined_symbols']=nm.stdout.splitlines() if not nm.returncode else ['nm failed: '+nm.stderr[:1000]]
@@ -571,9 +575,9 @@ const char *pointer_signature = __builtin_xnu_type_signature(struct pointers);
         entries={}
         for row in symbols.splitlines():
             fields=row.split()
-            if len(fields)==3 and fields[2].startswith('_ums512_hw_'):
+            if len(fields)==3 and fields[2].startswith(('_ums512_hw_','_ums512_xnu_')):
                 entries[fields[2]]=dict(va=int(fields[0],16),kind=fields[1])
-        for name in ('_ums512_hw_clock_identify','_ums512_hw_irq_initialize'):
+        for name in ('_ums512_hw_clock_identify','_ums512_hw_irq_initialize','_ums512_xnu_arm_init_checkpoint'):
             if name not in entries or not any(s['initprot']&4 and not s['initprot']&2 and
                 s['vmaddr']<=entries[name]['va']<s['vmaddr']+s['filesize'] for s in result['segments']):
                 raise ValueError('physical backend entry missing from executable kernel segment: '+name)

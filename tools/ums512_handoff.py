@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import struct
+import re
 
 from fdt import FDT
 from extract_hardware import extract
@@ -218,7 +219,8 @@ def adapt(fdt_data=None, kernel_data=None, context=None, seed=None):
         raise ValueError('bounded explicit ASCII command line required')
     if '-noprogress' not in command.split(): raise ValueError('headless profile requires -noprogress; framebuffer is unknown')
     words=command.split()
-    if len(words)!=len(set(words)) or set(words)-{'-noprogress','cpus=1'}:
+    diagnostic=[w for w in words if re.fullmatch(r'xnu_probe=[0-9a-f]{32}-P',w)]
+    if len(diagnostic)>1 or len(words)!=len(set(words)) or set(words)-{'-noprogress','cpus=1',*diagnostic}:
         raise ValueError('unreviewed boot option for headless UP hardware contract')
     args=bytearray(736);struct.pack_into('<HH4x4Q',args,0,2,2,va,base,end-base,top)
     struct.pack_into('<QI',args,96,plan['deviceTreeP'],len(adt))
