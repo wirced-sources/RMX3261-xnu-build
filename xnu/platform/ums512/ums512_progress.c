@@ -3,6 +3,7 @@
  */
 #include "ums512_progress.h"
 #include "xnu_boot.h"
+#include "ums512_checkpoint_protocol.h"
 volatile struct ums512_xnu_progress ums512_xnu_progress;
 static int hex(char c)
 { return c>='0' && c<='9' ? c-'0' : c>='a' && c<='f' ? c-'a'+10 : -1; }
@@ -65,13 +66,16 @@ __attribute__((noinline)) void ums512_xnu_arm_init_checkpoint(void *opaque)
     if (!args || ums512_xnu_progress_parse(&ums512_xnu_progress,args->command_line,sizeof(args->command_line))) return;
     uint64_t el;
     __asm__ volatile("mrs %0, CurrentEL":"=r"(el));
+    /* Reject wrong EL and absent return before publishing any success byte. */
+    uint64_t target=return_address(args->command_line,sizeof(args->command_line));
+    if (el!=4 || !target || ums512_ckpt_write(args->command_line,
+                sizeof(args->command_line),el,UINT32_C(0x41524d49))) return;
     /* Do not touch the timer before its higher-EL access contract is checked. */
     ums512_xnu_progress.current_el=el;ums512_xnu_progress.counter=0;
     ums512_xnu_progress.stage=0x41524d49; /* ARMI, genuine C checkpoint only */
     __asm__ volatile("dmb sy":::"memory");
     ums512_xnu_progress.state='D';
-    uint64_t target=return_address(args->command_line,sizeof(args->command_line));
-    if (target) {
+    {
         /* The parser above proved exactly one complete xnu_probe=<nonce>-P.
          * Copy the suffix itself through the return path, never synthesize it
          * in the loader or Linux. boot_args remains caller-owned writable RAM.

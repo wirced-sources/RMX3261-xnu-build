@@ -42,7 +42,8 @@ def install_progress(src):
     text=text.replace(anchor,anchor+'\n#if UMS512_HARDWARE_TARGET\n'
                       '\tums512_xnu_arm_init_checkpoint(args);\n#endif',1)
     target=src/'osfmk/ums512';target.mkdir(parents=True,exist_ok=True)
-    for name in ('ums512_progress.c','ums512_progress.h','ums512_progress_return.S'):
+    for name in ('ums512_progress.c','ums512_progress.h','ums512_progress_return.S',
+                 'ums512_checkpoint_protocol.h'):
         shutil.copyfile(PLATFORM/name,target/('ums512_progress_return.s' if name.endswith('.S') else name))
     p.write_text(text,encoding='utf-8',newline='\n')
 
@@ -325,7 +326,8 @@ def build_m2(kernel, record, out, tag=None):
         expected_usb_serial='M1-'+tag+'-D',xnu_usb_driver=False,
         source_hashes={p:sha(ROOT/p) for p in ('shim/ums512/xnu_entry.S','shim/ums512/xnu_entry.c',
             'shim/ums512/xnu_loader.c','shim/ums512/xnu_loader.h','shim/ums512/handoff.S',
-            'xnu/platform/ums512/ums512_progress.c','xnu/platform/ums512/ums512_progress_return.S','standalone/init.c',
+            'xnu/platform/ums512/ums512_progress.c','xnu/platform/ums512/ums512_progress_return.S',
+            'xnu/platform/ums512/ums512_checkpoint_protocol.h','standalone/init.c',
             'tools/xnu_physical.py','tools/m1_standalone.py','tools/boot_a_probe.py',
             'xnu/platform/ums512/platform.c','xnu/platform/ums512/platform.h','shim/ums512/xnu_boot.h')})
     (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n',encoding='utf-8')

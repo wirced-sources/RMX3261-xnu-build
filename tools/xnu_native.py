@@ -58,6 +58,7 @@ PATCHES = (
 CAPSULE = (
     "tools/xnu_physical.py", "shim/ums512/xnu_loader.c", "shim/ums512/xnu_loader.h",
     "xnu/platform/ums512/ums512_progress.c", "xnu/platform/ums512/ums512_progress.h",
+    "xnu/platform/ums512/ums512_checkpoint_protocol.h", "tests/m2_checkpoint_protocol_test.c",
     "xnu/platform/ums512/ums512_progress_return.S",
     "xnu/platform/ums512/ums512_frame.c", "xnu/platform/ums512/ums512_frame.h",
     "tools/ums512_hardware_build.py", "tools/ums512_handoff.py", "tools/ums512_target.py",
